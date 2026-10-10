@@ -12,15 +12,21 @@ import WaitModal from 'route/Main/Play/WaitModal';
 import SessionManager from 'state/SessionManager';
 
 import * as SessionInfo from 'utils/SessionInfo';
+import EmitterContext from 'utils/EmitterContext';
 
 //TODO add autoRecenter to network moves
 class Play extends React.Component {
+  static contextType = EmitterContext;
   sessionManager = new SessionManager();
   state = {
     board: null,
     loading: true
   };
   componentDidMount() {
+    //Redraw when settings change (e.g. legal move hints toggled)
+    this.configListener = this.context.on('configUpdate', () => {
+      this.sessionManager.refreshBoard();
+    });
     //Listen for board changes
     this.boardListener = this.sessionManager.on('onBoardUpdate', async (boardData) => {
       this.setState(boardData);
@@ -74,6 +80,7 @@ class Play extends React.Component {
     }
   }
   componentWillUnmount() {
+    if(typeof this.configListener === 'function') { this.configListener(); }
     //Stop listening to board changes
     if(typeof this.boardListener === 'function') { this.boardListener(); }
     //Stop listening to clock changes
@@ -140,6 +147,7 @@ class Play extends React.Component {
           moveBuffer={this.state.moveBuffer}
           checks={this.state.checks}
           availableMoves={this.state.availableMoves}
+          legalPieces={this.state.legalPieces}
           pastAvailableMoves={this.state.pastAvailableMoves}
           onMove={(move) => {
             this.sessionManager.move(move);

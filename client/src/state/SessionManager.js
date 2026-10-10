@@ -1,4 +1,5 @@
 import Chess from '5d-chess-js';
+import LegalMoveHints from 'state/LegalMoveHints';
 import ChessClock from '5d-chess-clock';
 import { createNanoEvents } from 'nanoevents';
 
@@ -10,6 +11,8 @@ const collections = initDb();
 export default class SessionManager {
   constructor(id = null) {
     this.emitter = createNanoEvents();
+    //Redraw the board when legal move hints have been computed
+    this.legalHints = new LegalMoveHints(() => { this.refreshBoard(); });
     if(id) {
       this.init(id);
     }
@@ -298,13 +301,15 @@ export default class SessionManager {
     });
   }
   getBoard() {
+    let hints = this.legalHints.get(this.chess);
     return {
       player: this.chess.player,
       board: this.chess.board,
       actionHistory: this.chess.actionHistory,
       moveBuffer: this.chess.moveBuffer,
       checks: this.chess.checks(),
-      availableMoves: this.chess.moves('object', false, false, false),
+      availableMoves: hints.availableMoves,
+      legalPieces: hints.legalPieces,
       pastAvailableMoves: [this.pastAvailableMoves,this.futureAvailableMoves].flat(),
       undoable: this.chess.undoable() && ((this.isServer && this.isPlayer) || !this.isServer),
       submittable: this.chess.submittable() && ((this.isServer && this.isPlayer) || !this.isServer),
@@ -403,7 +408,12 @@ export default class SessionManager {
       }
     }
   }
+  refreshBoard() {
+    if(!this.chess) { return; } //no game loaded yet
+    this.emitter.emit('onBoardUpdate', this.getBoard(), this.session);
+  }
   destroy() {
+    this.legalHints.destroy();
     this.emitter.events = {};
     window.clearTimeout(this.updateIntervalHandler);
     this.allowUpdate = false;

@@ -173,6 +173,20 @@ export default class SettingsMenu extends React.Component {
           </Grid>
           <Grid item xs={this.state.wideMode ? 6 : 12}>
             <FormControlLabel
+              label={<Trans>Highlight Legal Moves</Trans>}
+              control={
+                <Checkbox
+                  color='primary'
+                  checked={this.state.config.extra.legalMoveHints === true}
+                  onChange={(event) => {
+                    this.setState(deepmerge(this.state, { config: { extra: { legalMoveHints: event.target.checked } } }));
+                  }}
+                />
+              }
+            />
+          </Grid>
+          <Grid item xs={this.state.wideMode ? 6 : 12}>
+            <FormControlLabel
               label={<Trans>Show Future Boards</Trans>}
               control={
                 <Checkbox

@@ -11,8 +11,10 @@ import Player from 'components/Player';
 import AnalysisManager from 'state/AnalysisManager';
 
 import * as SessionInfo from 'utils/SessionInfo';
+import EmitterContext from 'utils/EmitterContext';
 
 class Analyze extends React.Component {
+  static contextType = EmitterContext;
   analysisManager = new AnalysisManager();
   state = {
     board: null,
@@ -25,6 +27,10 @@ class Analyze extends React.Component {
     blackUsername: ''
   };
   componentDidMount() {
+    //Redraw when settings change (e.g. legal move hints toggled)
+    this.configListener = this.context.on('configUpdate', () => {
+      this.analysisManager.refreshBoard();
+    });
     //Listen for board changes
     this.boardListener = this.analysisManager.on('onBoardUpdate', async (boardData) => {
       if(this.state.loading) {
@@ -62,6 +68,7 @@ class Analyze extends React.Component {
     }
   }
   componentWillUnmount() {
+    if(typeof this.configListener === 'function') { this.configListener(); }
     //Stop listening to board changes
     if(typeof this.boardListener === 'function') { this.boardListener(); }
     //Stop listening to session info changes
@@ -101,6 +108,7 @@ class Analyze extends React.Component {
         moveBuffer={this.state.moveBuffer}
         checks={this.state.checks}
         availableMoves={this.state.availableMoves}
+        legalPieces={this.state.legalPieces}
         pastAvailableMoves={this.state.pastAvailableMoves}
         onMove={(move) => {
           try {

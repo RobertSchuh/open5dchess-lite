@@ -1,4 +1,5 @@
 import Chess from '5d-chess-js';
+import LegalMoveHints from 'state/LegalMoveHints';
 import { createNanoEvents } from 'nanoevents';
 
 import * as sessions from 'network/sessions';
@@ -8,6 +9,8 @@ import deepcopy from 'deepcopy';
 export default class AnalysisManager {
   constructor(id = null) {
     this.emitter = createNanoEvents();
+    //Redraw the board when legal move hints have been computed
+    this.legalHints = new LegalMoveHints(() => { this.refreshBoard(); });
     if(id) {
       this.init(id);
     }
@@ -17,20 +20,9 @@ export default class AnalysisManager {
     this.importB64 = '';
     this.session = await sessions.getSession(id);
     if(this.session === null) {
-      try {
-        let pastSessions = await sessions.getPastSessionsQuery({ id: id });
-        if(pastSessions.length > 0) {
-          this.session = pastSessions[0];
-          this.emitter.emit('onSessionUpdate', this.session);
-        }
-        else {
-          //No session available, assuming id is Base64 import
-          this.importB64 = id;
-        }
-      }
-      catch(err) {
-        this.importB64 = id;
-      }
+      //No local session, so the id is a Base64 import. (Upstream also asked
+      //the old chessin5d.net server here, which is gone and made this hang.)
+      this.importB64 = id;
     }
     else {
       this.emitter.emit('onSessionUpdate', this.session);
@@ -109,6 +101,7 @@ export default class AnalysisManager {
     }
   }
   getBoard() {
+    let hints = this.legalHints.get(this.chess);
     let currentNotation = this.chess.export('5dpgn_active_timeline');
     return {
       player: this.chess.player,
@@ -116,7 +109,8 @@ export default class AnalysisManager {
       actionHistory: this.chess.actionHistory,
       moveBuffer: this.chess.moveBuffer,
       checks: this.chess.checks(),
-      availableMoves: this.chess.moves('object', false, false, false),
+      availableMoves: hints.availableMoves,
+      legalPieces: hints.legalPieces,
       pastAvailableMoves: [this.pastAvailableMoves,this.futureAvailableMoves].flat(),
       undoable: this.chess.undoable() && ((this.isServer && this.isPlayer) || !this.isServer),
       submittable: this.chess.submittable() && ((this.isServer && this.isPlayer) || !this.isServer),
@@ -200,7 +194,12 @@ export default class AnalysisManager {
     this.currentMoveBuffer = tmpChess.moveBuffer;
     this.setCurrentState();
   }
+  refreshBoard() {
+    if(!this.chess) { return; } //no game loaded yet
+    this.emitter.emit('onBoardUpdate', this.getBoard());
+  }
   destroy() {
+    this.legalHints.destroy();
     this.emitter.events = {};
   }
 }

@@ -28,6 +28,7 @@ Basic Props:
  - moveBuffer
  - checks
  - availableMoves
+ - legalPieces (squares of pieces with a legal move, or null)
  - pastAvailableMoves
  - onMove
 
@@ -442,6 +443,7 @@ export default class Player extends React.Component {
             moveBuffer={this.props.moveBuffer}
             checks={this.props.checks}
             availableMoves={this.props.availableMoves}
+            legalPieces={this.props.legalPieces}
             pastAvailableMoves={this.props.pastAvailableMoves}
             onMove={this.onMove.bind(this)}
           />

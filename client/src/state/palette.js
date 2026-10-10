@@ -59,6 +59,7 @@ const defaultPalette = {
     pastMove: 0x6fc326,
     capture: 0xf50000,
     pastCapture: 0xf50000,
+    legalPiece: 0xf5b800,
   }
 };
 

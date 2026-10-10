@@ -79,6 +79,7 @@ const defaultConfig = {
     pastHoverAlpha: 0.2,
     selectedAlpha: 0.6,
     pastSelectedAlpha: 0.4,
+    legalPieceAlpha: 0.45,
     fadeDuration: 75,
   },
   ripple: {
@@ -122,6 +123,7 @@ const defaultConfig = {
     autoRecenter: true,
     autoFlip: false,
     autoSubmit: false,
+    legalMoveHints: false,          //Highlight pieces with a legal move, show only legal moves
   }
 };
 

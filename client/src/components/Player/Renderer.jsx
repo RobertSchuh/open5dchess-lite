@@ -2,7 +2,7 @@ import React from 'react';
 
 import Box from '@material-ui/core/Box';
 
-import ChessRenderer from '5d-chess-renderer';
+import ChessRenderer from 'vendor/5d-chess-renderer';
 import Chess from '5d-chess-js';
 
 import EmitterContext from 'utils/EmitterContext';
@@ -125,6 +125,11 @@ export default class Renderer extends React.Component {
       }
       if(typeof this.props.pastAvailableMoves === 'object' && this.props.pastAvailableMoves !== null) {
         this.chessRenderer.global.pastAvailableMoves(this.props.pastAvailableMoves);
+      }
+      //Legal move hints: null/undefined means off or not computed yet
+      if(!deepequal(this.props.legalPieces, this.lastLegalPieces)) {
+        this.lastLegalPieces = this.props.legalPieces;
+        this.chessRenderer.global.legalPieces(this.props.legalPieces || []);
       }
     }
     else {

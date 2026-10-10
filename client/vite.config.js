@@ -25,7 +25,7 @@ export default defineConfig({
       // Browser polyfills for Node built-ins used by nedb (local DB).
       { find: /^util\/?$/, replacement: 'util/' },
       { find: /^path$/, replacement: 'path-browserify' },
-      { find: /^(polyfills|App|App\.css|state|network|route|components|utils|locales|assets)(\/.*)?$/, replacement: `${src}/$1$2` },
+      { find: /^(polyfills|App|App\.css|state|network|route|components|utils|locales|assets|vendor)(\/.*)?$/, replacement: `${src}/$1$2` },
     ],
   },
   define: {

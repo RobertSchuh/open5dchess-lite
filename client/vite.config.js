@@ -38,6 +38,12 @@ export default defineConfig({
     port: 3000,
     // Allow serving ../shared in dev.
     fs: { allow: ['..'] },
+    // Dev: forward API and WebSocket to the game server (server/, port 8090)
+    proxy: {
+      // Keep the browser's Host header so invite links use the address you browsed to
+      '/api': { target: 'http://127.0.0.1:8090', changeOrigin: false },
+      '/ws': { target: 'ws://127.0.0.1:8090', ws: true, changeOrigin: false },
+    },
   },
   optimizeDeps: {
     // Same as build.rolldownOptions below, for the dev-server pre-bundle.

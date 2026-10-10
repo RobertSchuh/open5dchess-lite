@@ -16,6 +16,7 @@ import ExpandMoreIcon from '@material-ui/icons/ExpandMore';
 
 import QuickPlayOptions from 'route/Main/PlayMenu/QuickPlayMenu/QuickPlayOptions';
 import QuickPlayModal from 'route/Main/PlayMenu/QuickPlayModal';
+import NewOnlineGameDialog from 'route/Main/PlayMenu/NewOnlineGameDialog';
 
 import EmitterContext from 'utils/EmitterContext';
 import Delay from 'utils/Delay';
@@ -33,7 +34,8 @@ class QuickPlayMenu extends React.Component {
     queueStarted: false,
     matchFound: false,
     ranked: false,
-    opponentTimeout: false
+    opponentTimeout: false,
+    onlineOpen: false
   };
   async onLocal() {
     let variants = settings.get().quickPlay.variants;
@@ -130,29 +132,24 @@ class QuickPlayMenu extends React.Component {
           opponentTimeout={this.state.opponentTimeout}
           onCancel={this.cancel.bind(this)}
         />
+        <NewOnlineGameDialog
+          open={this.state.onlineOpen}
+          onClose={() => this.setState({ onlineOpen: false })}
+        />
         <Hidden xsDown>
           <Box display='flex' width={1} height={130}>
-            <Tooltip
-              arrow
-              title={<Trans>Log in to play online!</Trans>}
-              disableFocusListener={this.state.loggedIn}
-              disableHoverListener={this.state.loggedIn}
-              disableTouchListener={this.state.loggedIn}
-            >
-              <Box p={1} width={1/2} height={1}>
-                <Button
-                  disabled={!this.state.loggedIn}
-                  color='primary'
-                  variant='contained'
-                  style={{ width: '100%', height: '100%' }}
-                  onClick={() => {
-                    this.quickplay();
-                  }}
-                >
-                  <Trans>Quick Play</Trans>
-                </Button>
-              </Box>
-            </Tooltip>
+            <Box p={1} width={1/2} height={1}>
+              <Button
+                color='primary'
+                variant='contained'
+                style={{ width: '100%', height: '100%' }}
+                onClick={() => {
+                  this.setState({ onlineOpen: true });
+                }}
+              >
+                <Trans>Online Play</Trans>
+              </Button>
+            </Box>
             <Box p={1} width={1/2} height={1}>
               <Tooltip
                 arrow
@@ -191,27 +188,18 @@ class QuickPlayMenu extends React.Component {
           </Box>
         </Hidden>
         <Hidden smUp>
-          <Tooltip
-            arrow
-            title={<Trans>Log in to play online!</Trans>}
-            disableFocusListener={this.state.loggedIn}
-            disableHoverListener={this.state.loggedIn}
-            disableTouchListener={this.state.loggedIn}
-          >
-            <Box p={1} width={1} height={90}>
-              <Button
-                disabled={!this.state.loggedIn}
-                color='primary'
-                variant='contained'
-                style={{ width: '100%', height: '100%' }}
-                onClick={() => {
-                  this.quickplay();
-                }}
-              >
-                <Trans>Quick Play</Trans>
-              </Button>
-            </Box>
-          </Tooltip>
+          <Box p={1} width={1} height={90}>
+            <Button
+              color='primary'
+              variant='contained'
+              style={{ width: '100%', height: '100%' }}
+              onClick={() => {
+                this.setState({ onlineOpen: true });
+              }}
+            >
+              <Trans>Online Play</Trans>
+            </Button>
+          </Box>
           <Tooltip
             arrow
             title={<Trans>Log in to play online!</Trans>}

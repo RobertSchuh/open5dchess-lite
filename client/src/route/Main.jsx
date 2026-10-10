@@ -8,6 +8,7 @@ import AnalyzeMenu from 'route/Main/AnalyzeMenu';
 import MainAppBar from 'route/MainAppBar';
 import Dashboard from 'route/Main/Dashboard';
 import Play from 'route/Main/Play';
+import OnlineGame from 'route/Main/OnlineGame';
 import PlayMenu from 'route/Main/PlayMenu';
 import Profile from 'route/Main/Profile';
 import Settings from 'route/Main/Settings';
@@ -44,6 +45,9 @@ export default class Main extends React.Component {
         <Switch>
           <Route exact path='/'>
             <Dashboard />
+          </Route>
+          <Route path='/g/:id'>
+            <OnlineGame />
           </Route>
           <Route path='/analyze'>
             <Analyze />

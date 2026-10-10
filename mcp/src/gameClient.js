@@ -6,6 +6,11 @@ export const parseLink = (link) => {
   let url;
   try { url = new URL(String(link).trim()); }
   catch(err) { throw new Error('Not a valid URL. Expected an invite link like http://host/#/g/<id>?seat=<token>'); }
+  // The AI text-page link works too: .../api/games/<id>/llm?seat=<token>
+  const api = url.pathname.match(/^(.*)\/api\/games\/([\w-]+)\/\w+$/);
+  if(api && url.searchParams.get('seat')) {
+    return { baseUrl: `${url.protocol}//${url.host}${api[1]}`, gameId: api[2], seat: url.searchParams.get('seat') };
+  }
   const m = url.hash.match(/^#\/g\/([\w-]+)\?(.*)$/);
   if(!m) { throw new Error('Not an open5dchess invite link (expected .../#/g/<id>?seat=<token>)'); }
   const seat = new URLSearchParams(m[2]).get('seat');
@@ -53,6 +58,13 @@ export class GameClient {
   moves(moves, submit = true) { return this.request('POST', 'moves', { body: { moves, submit } }); }
   undo() { return this.request('POST', 'undo'); }
   resign() { return this.request('POST', 'resign'); }
+  // What the opponent could do after these moves (nothing is played)
+  preview(moves) { return this.request('POST', 'preview', { body: { moves } }); }
+  async rules() {
+    const res = await fetch(`${this.baseUrl}/api/rules`);
+    if(!res.ok) { throw new Error(`Could not load rules (${res.status})`); }
+    return res.text();
+  }
   // Long-poll until it's our turn or the game ends (server caps at 55 s)
   waitForTurn(timeoutSeconds = 50) {
     const ms = Math.max(1, Math.min(55, timeoutSeconds)) * 1000;
@@ -82,7 +94,7 @@ export const createGame = async (baseUrl, { variant = 'standard', timeControl = 
 const RESULT_TEXT = { checkmate: 'by checkmate', stalemate: 'by stalemate', time: 'on time', resignation: 'by resignation' };
 
 // Human/LLM readable summary of a state from the server
-export const formatState = (s, { includeBoards = true, includeMoves = true, includePgn = false } = {}) => {
+export const formatState = (s, { includeBoards = true, includeMoves = true, includePgn = false, view = 'all' } = {}) => {
   const lines = [];
   const name = (c) => s.players?.[c]?.nickname || (c === 'white' ? 'White' : 'Black');
   lines.push(`Game ${s.id} · variant ${s.variant} · you are ${s.you}`);
@@ -100,7 +112,15 @@ export const formatState = (s, { includeBoards = true, includeMoves = true, incl
     lines.push(`Staged this turn (not submitted): ${s.staged.join(' ')}${s.submittable ? ' · can submit now' : ' · more moves needed before submit'}`);
   }
   if(includeBoards) {
-    lines.push('', 'Latest board of each timeline (White uppercase, Black lowercase):', s.boards.trimEnd());
+    if(view === 'latest' || !s.timelines) {
+      lines.push('', 'Latest board of each timeline (White uppercase, Black lowercase):', s.boards.trimEnd());
+    }
+    else {
+      lines.push('', 'All boards (rows = timelines, columns = moments in time; * = you can move there):', s.timelines.trimEnd());
+    }
+  }
+  if(s.yourTurn && s.threatsText) {
+    lines.push('', 'THREATS', s.threatsText);
   }
   if(includePgn) {
     lines.push('', 'Game so far (5DPGN):', s.pgn.trim());

@@ -3,6 +3,7 @@
 import { createRequire } from 'node:module';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { classifyMoves, hasLegalAction, trimState } from '../../shared/legalMoves.js';
+import { threats, threatsText, timelineGrid } from './describe.js';
 
 const require = createRequire(import.meta.url);
 const Chess = require('5d-chess-js');
@@ -100,6 +101,7 @@ export class Game {
     this.version++;
     this.lastActivity = this.now();
     this.legalCache = null;
+    this.threatCache = null;
     for(const fn of [...this.listeners]) {
       try { fn(this); } catch(err) { console.error(err); }
     }
@@ -285,6 +287,42 @@ export class Game {
     return names;
   }
 
+  // What the opponent could do next (only meaningful on your turn); cached per position
+  currentThreats() {
+    if(this.ended) { return []; }
+    if(this.threatCache && this.threatCache.version === this.version) { return this.threatCache.list; }
+    const list = threats(this.chess);
+    this.threatCache = { version: this.version, list };
+    return list;
+  }
+
+  // "If I play these moves, what can the opponent do?" Nothing is changed.
+  preview(seat, moves) {
+    this.requireTurn(seat);
+    const probe = new Chess();
+    probe.state(this.chess.state()); // validation stays on: illegal moves throw
+    for(const m of moves) {
+      try { probe.move(m); }
+      catch(err) { throw new GameError(400, `Illegal move: ${m}`); }
+    }
+    // Moves are validated; turn detection off so submittable() skips the engine's slow mate search
+    probe.skipDetection = true;
+    const complete = !probe.inCheck && probe.submittable();
+    const list = threats(probe);
+    let note;
+    if(probe.inCheck) { note = 'After these moves your king is still in check: you could not submit this.'; }
+    else if(!complete) { note = 'Turn not complete yet (more present boards need a move); threats assume you stop here.'; }
+    else { note = 'These moves complete your turn.'; }
+    return {
+      moves,
+      complete,
+      inCheck: probe.inCheck,
+      note,
+      threats: list,
+      threatsText: threatsText(list, probe.inCheck),
+    };
+  }
+
   // Plain-text-friendly state for LLMs and scripts
   textState(seat) {
     const state = this.publicState(seat);
@@ -309,7 +347,12 @@ export class Game {
       },
       players: state.players,
       pgn: this.chess.export('5dpgn'),
+      // Latest board of each timeline, and every board of every timeline as a grid
       boards: boardText(this.chess),
+      timelines: timelineGrid(this.chess, yourTurn ? seat : null),
+      // What the opponent could do if you made no move (your turn only)
+      threats: yourTurn ? this.currentThreats() : [],
+      threatsText: yourTurn ? threatsText(this.currentThreats(), this.chess.inCheck) : null,
       legalMoves: yourTurn ? this.legalMoves() : [],
     };
   }

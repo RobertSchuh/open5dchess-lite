@@ -37,7 +37,12 @@ const run = (fn) => async (args) => {
   }
 };
 
-const server = new McpServer({ name: 'open5dchess', version: '0.1.0' });
+const server = new McpServer({ name: 'open5dchess', version: '0.2.0' }, {
+  instructions: 'Play 5D chess (with multiverse time travel) against people. When the user pastes an open5dchess ' +
+    'invite link (http://host/#/g/<id>?seat=<token>), call join_game with it: it returns the rules and the position. ' +
+    'Each turn: read THREATS, use preview_moves on candidates, then make_moves with moves from the legal list. ' +
+    'Use wait_for_turn while the opponent thinks, and keep chatting with the user about the game.',
+});
 
 server.registerTool('join_game', {
   title: 'Join a 5D chess game',
@@ -48,7 +53,27 @@ server.registerTool('join_game', {
   const client = GameClient.fromLink(link);
   const s = await client.state();
   game = client;
-  return text(`Joined.\n${formatState(s)}`);
+  const rules = await client.rules().catch(() => NOTATION);
+  return text(`${rules}\n\n=== JOINED ===\n${formatState(s)}`);
+}));
+
+server.registerTool('get_rules', {
+  title: '5D chess rules',
+  description: 'The rules primer: boards, timelines, time travel, the present, check, notation, and common beginner mistakes.',
+}, run(async () => {
+  if(game) { return text(await game.rules()); }
+  return text(NOTATION);
+}));
+
+server.registerTool('preview_moves', {
+  title: 'Preview moves (nothing is played)',
+  description: 'Before committing: what could the opponent do if you played these moves? Lists their captures, checks ' +
+    'and MATE threats after your moves, including time-travel attacks. Use this on candidate moves, especially when ' +
+    'moving a piece that defends something.',
+  inputSchema: { moves: z.array(z.string()).min(1).describe('Candidate moves, e.g. ["Nxd5"]') },
+}, run(async ({ moves }) => {
+  const p = await needGame().preview(moves);
+  return text(`If you play ${moves.join(' ')}: ${p.note}\n${p.threatsText}`);
 }));
 
 server.registerTool('create_game', {
@@ -75,11 +100,15 @@ server.registerTool('create_game', {
 
 server.registerTool('get_state', {
   title: 'Get the game state',
-  description: 'Current position: every timeline\'s latest board as text, whose turn, check, clocks and (on your turn) the legal moves.',
-  inputSchema: { include_pgn: z.boolean().default(false).describe('Also return the whole game in 5DPGN') },
-}, run(async ({ include_pgn }) => {
+  description: 'Current position: every board of every timeline (or just the latest ones), whose turn, check, ' +
+    'clocks and, on your turn, the THREATS (what the opponent could do next, incl. mate threats) and legal moves.',
+  inputSchema: {
+    include_pgn: z.boolean().default(false).describe('Also return the whole game in 5DPGN'),
+    view: z.enum(['all', 'latest']).default('all').describe('all = every board of every timeline; latest = only the latest board per timeline'),
+  },
+}, run(async ({ include_pgn, view }) => {
   const s = await needGame().state();
-  return text(formatState(s, { includePgn: include_pgn }));
+  return text(formatState(s, { includePgn: include_pgn, view }));
 }));
 
 server.registerTool('list_legal_moves', {

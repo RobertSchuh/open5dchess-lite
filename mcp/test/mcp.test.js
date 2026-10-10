@@ -21,6 +21,7 @@ after(() => {
 test('parseLink understands invite links and rejects others', () => {
   assert.deepEqual(parseLink('http://localhost:3000/#/g/abc_-1?seat=TOKEN'), { baseUrl: 'http://localhost:3000', gameId: 'abc_-1', seat: 'TOKEN' });
   assert.deepEqual(parseLink('https://chess.example/sub/#/g/x?seat=t').baseUrl, 'https://chess.example/sub');
+  assert.deepEqual(parseLink('http://pi:8090/api/games/abc/llm?seat=T'), { baseUrl: 'http://pi:8090', gameId: 'abc', seat: 'T' });
   assert.throws(() => parseLink('not a url'), /valid URL/);
   assert.throws(() => parseLink('http://x/#/play'), /invite link/);
   assert.throws(() => parseLink('http://x/#/g/abc'), /invite link|seat/);
@@ -53,7 +54,7 @@ test('MCP over stdio: join by link, play, wait, see the result', async () => {
   await client.connect(transport);
   try {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    assert.deepEqual(tools, ['create_game', 'get_state', 'join_game', 'list_legal_moves', 'make_moves', 'resign', 'undo_staged_move', 'wait_for_turn']);
+    assert.deepEqual(tools, ['create_game', 'get_rules', 'get_state', 'join_game', 'list_legal_moves', 'make_moves', 'preview_moves', 'resign', 'undo_staged_move', 'wait_for_turn']);
 
     const call = async (name, args = {}) => {
       const res = await client.callTool({ name, arguments: args });
@@ -65,7 +66,9 @@ test('MCP over stdio: join by link, play, wait, see the result', async () => {
 
     // The model plays Black via the link the "user" pasted
     let r = await call('join_game', { link: created.links.black });
+    assert.match(r.text, /RULES PRIMER/);
     assert.match(r.text, /you are black/);
+    assert.match(r.text, /All boards \(rows = timelines/);
     assert.match(r.text, /Waiting: white to move/);
 
     const white = GameClient.fromLink(created.links.white);
@@ -84,6 +87,10 @@ test('MCP over stdio: join by link, play, wait, see the result', async () => {
     assert.match(r.text, /Played and submitted: e5/);
 
     await white.moves(['g4']);
+    r = await call('get_state');
+    assert.match(r.text, /THREATS/);
+    r = await call('preview_moves', { moves: ['Qh4'] });
+    assert.match(r.text, /If you play Qh4: These moves complete your turn/);
     r = await call('list_legal_moves');
     assert.match(r.text, /Qh4/);
     r = await call('make_moves', { moves: ['Qh4'] });

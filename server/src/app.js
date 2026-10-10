@@ -5,6 +5,8 @@ import path from 'node:path';
 import { WebSocketServer } from 'ws';
 import { GameStore } from './store.js';
 import { GameError, VARIANTS } from './game.js';
+import { RULES } from './describe.js';
+import { llmPage } from './llmPage.js';
 import { RateLimiter } from './ratelimit.js';
 
 const MAX_BODY = 16 * 1024;
@@ -54,6 +56,15 @@ const baseUrl = (req, publicUrl) => {
 };
 
 const gameLink = (base, id, token) => `${base}/#/g/${id}?seat=${token}`;
+
+const sendText = (res, status, text) => {
+  res.writeHead(status, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Content-Length': Buffer.byteLength(text),
+  });
+  res.end(text);
+};
 
 const sendJson = (res, status, body) => {
   const data = JSON.stringify(body);
@@ -107,6 +118,9 @@ export const createApp = ({
 
     if(parts.length === 2 && parts[1] === 'health' && req.method === 'GET') {
       return sendJson(res, 200, { ok: true, games: store.games.size });
+    }
+    if(parts.length === 2 && parts[1] === 'rules' && req.method === 'GET') {
+      return sendText(res, 200, RULES + '\n');
     }
     if(parts[1] !== 'games') { throw new GameError(404, 'Not found'); }
 
@@ -167,6 +181,21 @@ export const createApp = ({
         throw err;
       }
       return sendJson(res, 200, game.textState(seat));
+    }
+
+    // Everything an LLM agent needs in one plain-text page: rules, state, how to move
+    if(action === 'llm' && req.method === 'GET') {
+      return sendText(res, 200, llmPage(game, seat, baseUrl(req, publicUrl), url.searchParams.get('seat')));
+    }
+
+    // "If I play these moves, what could the opponent do?" (changes nothing)
+    if(action === 'preview' && req.method === 'POST') {
+      const body = await readJson(req);
+      const moves = Array.isArray(body.moves) ? body.moves : [];
+      if(moves.length === 0 || moves.length > 64 || moves.some((m) => typeof m !== 'string' || m.length > 200)) {
+        throw new GameError(400, 'moves must be a non-empty array of 5DPGN move strings');
+      }
+      return sendJson(res, 200, game.preview(seat, moves.map((m) => m.trim())));
     }
 
     if(action === 'undo' && req.method === 'POST') {

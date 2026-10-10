@@ -60,6 +60,9 @@ class InviteLinks extends React.Component {
     const links = this.props.links;
     if(!links) { return null; }
     const opponent = this.props.seat === 'white' ? 'black' : 'white';
+    //Same seat as the invite link, as a plain-text page (rules + state + HTTP API) for AI agents
+    const m = links[opponent].match(/^(.*)\/#\/g\/([\w-]+)\?seat=([\w-]+)$/);
+    const aiLink = m ? `${m[1]}/api/games/${m[2]}/llm?seat=${m[3]}` : null;
     return (
       <Box>
         {this.row(
@@ -67,6 +70,11 @@ class InviteLinks extends React.Component {
           links[opponent],
           <Trans>Send this to your opponent. Anyone with it takes that seat, so only share it with them.</Trans>
         )}
+        {aiLink ? this.row(
+          <Trans>For an AI opponent</Trans>,
+          aiLink,
+          <Trans>Same seat as the invite link, as a text page with the rules, the boards and how to move over HTTP. With the open5dchess MCP tools, the normal invite link works too.</Trans>
+        ) : null}
         {this.row(
           <Trans>Spectator link</Trans>,
           links.spectate,

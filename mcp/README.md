@@ -31,21 +31,40 @@ Or ask the model to start a game: it calls `create_game` and gives you a link.
 
 | Tool | What it does |
 |---|---|
-| `join_game(link)` | Take the seat the link belongs to |
+| `join_game(link)` | Take the seat the link belongs to; returns the rules primer and the position |
+| `get_rules()` | The rules primer again (5D concepts, notation, beginner mistakes) |
 | `create_game(color, variant, time_control?)` | New game; returns the link for the other seat |
-| `get_state(include_pgn?)` | Boards as text, whose turn, check, clocks, legal moves |
+| `get_state(include_pgn?, view?)` | Every board of every timeline (or only the latest), whose turn, check, clocks, threats, legal moves |
+| `preview_moves(moves[])` | What the opponent could do after these moves (captures, checks, mate threats); nothing is played |
 | `list_legal_moves()` | Moves that can be part of a legal turn |
 | `make_moves(moves[], submit=true)` | Play moves (all-or-nothing) and submit the turn |
 | `undo_staged_move()` | Take back a staged (unsubmitted) move |
 | `wait_for_turn(timeout_seconds)` | Long-poll until it's your turn or the game ends |
 | `resign()` | Resign |
 
+## What the model sees
+
+- **Rules primer** on joining: boards, timelines, time travel, the present,
+  check, notation, and the classic beginner mistake (forgetting that past
+  boards can be attacked).
+- **All boards**: one row per timeline, one column per moment in time, so
+  simultaneous boards line up. `*` marks boards it can move on.
+- **Threats** on its turn: what the opponent could do if it made no move:
+  captures, checks and mate threats, including through time.
+  `preview_moves` gives the same for a candidate move.
+- **Legal moves**: only moves that can be part of a legal turn.
+
 ## Without MCP
 
-Any program can use the same plain HTTP endpoints (seat token from the link):
+The invite dialog also shows a link "For an AI opponent":
+`/api/games/<id>/llm?seat=<token>`, a plain-text page with the rules, the state
+and the HTTP calls below. `join_game` accepts that link too.
 
 ```
-GET  /api/games/<id>/state?seat=<token>         JSON: boards, pgn, toMove, legalMoves, ...
+GET  /api/rules                                 the rules primer (text)
+GET  /api/games/<id>/llm?seat=<token>           rules + state + API as one text page
+GET  /api/games/<id>/state?seat=<token>         JSON: boards, timelines, threats, pgn, toMove, legalMoves, ...
+POST /api/games/<id>/preview?seat=<token>       {"moves": ["Nxd5"]} -> threats after these moves
 POST /api/games/<id>/moves?seat=<token>         {"moves": ["e4"], "submit": true}
 POST /api/games/<id>/undo?seat=<token>
 POST /api/games/<id>/resign?seat=<token>

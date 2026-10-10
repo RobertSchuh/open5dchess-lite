@@ -16,8 +16,12 @@ export default class LegalMoveHints {
     this.resultKey = null;
     this.resultClasses = null;
   }
-  enabled() {
-    return crConfig.get().extra.legalMoveHints === true;
+  //Hints are a per-player option: 'off' | 'white' | 'black' | 'both'.
+  //Old saved settings may still hold a boolean; treat true as 'both'.
+  enabled(player) {
+    let mode = crConfig.get().extra.legalMoveHints;
+    if(mode === true) { mode = 'both'; }
+    return mode === 'both' || mode === player;
   }
   //Same position (including moves made so far this action) -> same key
   //(structural hash from the fast engine; chess.hash was an md5 of a FEN
@@ -29,7 +33,7 @@ export default class LegalMoveHints {
   //legalPieces is null while hints are off or not computed yet.
   get(chess) {
     let moves = chess.moves('object', false, false, false);
-    if(!this.enabled()) { return { availableMoves: moves, legalPieces: null }; }
+    if(!this.enabled(chess.player)) { return { availableMoves: moves, legalPieces: null }; }
     let key = this.key(chess);
     if(key === this.resultKey && this.resultClasses && this.resultClasses.length === moves.length) {
       //'unknown' moves (search timed out) stay selectable: only proven-illegal

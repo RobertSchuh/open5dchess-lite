@@ -1,0 +1,5 @@
+node_modules/
+/upstream/
+/release/
+dist/
+.env.local

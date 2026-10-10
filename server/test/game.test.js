@@ -39,14 +39,14 @@ test('turn order, illegal moves and spectators are enforced', () => {
   assert.equal(g.player, 'black');
 });
 
-test("fool's mate is not mate in 5D: the king escapes back in time", () => {
+test("fool's mate is not mate in 5D: the king escapes back in time", async () => {
   const g = new Game({ id: 'x' });
   play(g, 'white', ['f3']);
   play(g, 'black', ['e5']);
   play(g, 'white', ['g4']);
   play(g, 'black', ['Qh4']);
   assert.equal(g.result, null);
-  assert.ok(g.legalMoves().some((m) => m.includes('>>')));
+  assert.ok((await g.legalMoves()).some((m) => m.includes('>>')));
 });
 
 test('checkmate across timelines ends the game', () => {
@@ -72,12 +72,12 @@ test('cannot submit while in check', () => {
   assert.equal(g.result, null);
 });
 
-test('legal move list only contains moves that can complete an action', () => {
+test('legal move list only contains moves that can complete an action', async () => {
   const g = new Game({ id: 'x' });
   play(g, 'white', ['e4']);
   play(g, 'black', ['f6']);
   play(g, 'white', ['Qh5']);
-  const legal = g.legalMoves();
+  const legal = await g.legalMoves();
   assert.deepEqual([...legal].sort(), ['g6']);
 });
 
@@ -113,29 +113,30 @@ test('version increases on every change and listeners are called', () => {
   assert.equal(calls, 2);
 });
 
-test('text state shows boards, staged moves and legal moves only on your turn', () => {
+test('text state shows boards, staged moves and legal moves only on your turn', async () => {
   const g = new Game({ id: 'x' });
   g.move('white', 'e4');
-  const w = g.textState('white');
+  const w = await g.textState('white');
   assert.deepEqual(w.staged, ['e4']);
   assert.equal(w.submittable, true);
   assert.match(w.boards, /4 \. \. \. \. P/); // staged e4 is on the board
-  const b = g.textState('black');
+  const b = await g.textState('black');
   assert.deepEqual(b.legalMoves, []);
   assert.equal(b.yourTurn, false);
 });
 
-test('in check on one board: only moves that can still lift the check there are listed for it', () => {
+test('in check on one board: only moves that can still lift the check there are listed for it', async () => {
   // Robert's game: White's king on L-2 is attacked by a queen that time-travelled in
   const g = new Game({ id: 'x' });
   const actions = ['e3', 'e6', 'Qf3', 'Nc6', 'Na3', 'Nb4', 'Nb5', 'Nxc2', 'Kd1', 'Nxa1', 'Nxc7', 'Qxc7',
     '(0T7)Qf3>>x(0T3)f7~', '(0T7)Qc7>>x(0T2)c2~', '(-1T3)Bd3', '(-1T3)Qc2>>(0T2)d1~'];
   actions.forEach((m, i) => play(g, i % 2 === 0 ? 'white' : 'black', [m]));
-  const onCheckedBoard = g.legalMoves().filter((m) => m.startsWith('(-2T3)'));
+  const legal = await g.legalMoves();
+  const onCheckedBoard = legal.filter((m) => m.startsWith('(-2T3)'));
   assert.ok(onCheckedBoard.includes('(-2T3)Kxd1'));
   assert.ok(onCheckedBoard.includes('(-2T3)Qxd1'));
   assert.ok(!onCheckedBoard.includes('(-2T3)Nc3'));
   assert.ok(onCheckedBoard.length <= 3, onCheckedBoard.join(' '));
   // Moves on other boards stay legal: they can be combined with Kxd1
-  assert.ok(g.legalMoves().includes('(0T8)a3'));
+  assert.ok(legal.includes('(0T8)a3'));
 });

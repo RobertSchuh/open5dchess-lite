@@ -12,29 +12,29 @@ const replay = (moves) => {
   return g;
 };
 
-test('threats flag the time-travel mate Black walked into', () => {
+test('threats flag the time-travel mate Black walked into', async () => {
   const g = replay(LOSS);
-  const s = g.textState('black');
+  const s = await g.textState('black');
   const mate = s.threats.find((t) => t.kind === 'mate');
   assert.ok(mate, s.threatsText);
   assert.equal(mate.move, '(0T9)Qf3>>x(0T5)f7~');
   assert.equal(mate.travel, true);
   assert.match(s.threatsText, /MATE THREAT/);
   // Not shown to the side that isn't on move
-  assert.deepEqual(g.textState('white').threats, []);
+  assert.deepEqual((await g.textState('white')).threats, []);
 });
 
-test('preview shows what a candidate move allows, without playing it', () => {
+test('preview shows what a candidate move allows, without playing it', async () => {
   // Before 4...Nxd5: taking reopens the f-file (Robert's point)
   const g = replay(LOSS.slice(0, 7));
   const v = g.version;
-  const p = g.preview('black', ['Nxd5']);
+  const p = await g.preview('black', ['Nxd5']);
   assert.equal(p.complete, true);
   assert.ok(p.threats.some((t) => t.move === 'Qxd5' && t.captured === 'knight'));
   assert.equal(g.version, v);           // nothing changed
   assert.deepEqual(g.chess.moveBuffer, []);
-  assert.throws(() => g.preview('black', ['Ke2']), /Illegal move/);
-  assert.throws(() => g.preview('white', ['e4']), /Not your turn/);
+  await assert.rejects(() => g.preview('black', ['Ke2']), /Illegal move/);
+  await assert.rejects(() => g.preview('white', ['e4']), /Not your turn/);
 });
 
 test('timeline grid shows every board, aligned in time, with playable marks', () => {

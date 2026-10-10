@@ -152,7 +152,7 @@ export const createApp = ({
     const action = parts[3];
 
     if(action === 'state' && req.method === 'GET') {
-      return sendJson(res, 200, game.textState(seat));
+      return sendJson(res, 200, await game.textState(seat));
     }
 
     // Body: { moves: ["e4"], submit: true }. All moves of one request are
@@ -176,16 +176,16 @@ export const createApp = ({
           try { game.undo(seat); } catch(e) { break; }
         }
         if(err instanceof GameError && err.status !== 403 && !game.ended && seat === game.player) {
-          err.legalMoves = game.legalMoves();
+          err.legalMoves = await game.legalMoves();
         }
         throw err;
       }
-      return sendJson(res, 200, game.textState(seat));
+      return sendJson(res, 200, await game.textState(seat));
     }
 
     // Everything an LLM agent needs in one plain-text page: rules, state, how to move
     if(action === 'llm' && req.method === 'GET') {
-      return sendText(res, 200, llmPage(game, seat, baseUrl(req, publicUrl), url.searchParams.get('seat')));
+      return sendText(res, 200, await llmPage(game, seat, baseUrl(req, publicUrl), url.searchParams.get('seat')));
     }
 
     // "If I play these moves, what could the opponent do?" (changes nothing)
@@ -195,17 +195,17 @@ export const createApp = ({
       if(moves.length === 0 || moves.length > 64 || moves.some((m) => typeof m !== 'string' || m.length > 200)) {
         throw new GameError(400, 'moves must be a non-empty array of 5DPGN move strings');
       }
-      return sendJson(res, 200, game.preview(seat, moves.map((m) => m.trim())));
+      return sendJson(res, 200, await game.preview(seat, moves.map((m) => m.trim())));
     }
 
     if(action === 'undo' && req.method === 'POST') {
       game.undo(seat);
-      return sendJson(res, 200, game.textState(seat));
+      return sendJson(res, 200, await game.textState(seat));
     }
 
     if(action === 'resign' && req.method === 'POST') {
       game.resign(seat);
-      return sendJson(res, 200, game.textState(seat));
+      return sendJson(res, 200, await game.textState(seat));
     }
 
     // Long-poll until it's this seat's turn or the game ends
@@ -215,16 +215,16 @@ export const createApp = ({
       const timeoutMs = Math.min(Number(url.searchParams.get('timeout') ?? WAIT_DEFAULT_MS) || WAIT_DEFAULT_MS, WAIT_MAX_MS);
       const ready = () => game.removed || game.ended ||
         (seat === 'spectator' ? game.version > since : game.player === seat);
-      if(ready()) { return sendJson(res, 200, game.textState(seat)); }
+      if(ready()) { return sendJson(res, 200, await game.textState(seat)); }
       await new Promise((resolve) => {
         let done = false;
-        const finish = (timedOut) => {
+        const finish = async (timedOut) => {
           if(done) { return; }
           done = true;
           off();
           clearTimeout(timer);
           if(game.removed) { sendJson(res, 404, { error: 'Game expired' }); }
-          else { sendJson(res, 200, Object.assign(game.textState(seat), timedOut ? { timeout: true } : {})); }
+          else { sendJson(res, 200, Object.assign(await game.textState(seat), timedOut ? { timeout: true } : {})); }
           resolve();
         };
         const off = game.onChange(() => { if(ready()) { finish(false); } });

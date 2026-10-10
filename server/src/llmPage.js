@@ -28,8 +28,8 @@ export const stateText = (s) => {
   return lines.join('\n');
 };
 
-export const llmPage = (game, seat, baseUrl, token) => {
-  const s = game.textState(seat);
+export const llmPage = async (game, seat, baseUrl, token) => {
+  const s = await game.textState(seat);
   const api = `${baseUrl}/api/games/${game.id}`;
   const q = `seat=${token}`;
   return `${RULES}

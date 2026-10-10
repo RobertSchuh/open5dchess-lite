@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { classifyMoves, hasLegalAction, trimState } from '../../shared/legalMoves.js';
 import { Position } from '../../shared/fastPosition.js';
+import { pool } from './analysisPool.js';
 import { threats, threatsText, timelineGrid } from './describe.js';
 
 const require = createRequire(import.meta.url);
@@ -14,7 +15,11 @@ export const VARIANTS = ['standard', 'defended_pawn', 'half_reflected', 'princes
 
 // Search budgets (ms). The engine's own mate search reports "mate" when it
 // times out, so the server uses shared/legalMoves.js instead.
+// Mate detection first runs inline with the quick budget (covers almost all
+// positions and keeps results synchronous); only slow positions go to the
+// worker pool with the full budget.
 const END_SEARCH_MS = 10000;
+const END_QUICK_MS = Number(process.env.END_QUICK_MS || 250);
 const LEGAL_MOVES_MS = 4000;
 
 export class GameError extends Error {
@@ -37,7 +42,7 @@ const tokenEquals = (a, b) => {
 const other = (color) => color === 'white' ? 'black' : 'white';
 
 export class Game {
-  constructor({ id, variant = 'standard', timeControl = null, now = Date.now }) {
+  constructor({ id, variant = 'standard', timeControl = null, now = Date.now, endQuickMs = END_QUICK_MS }) {
     if(!VARIANTS.includes(variant)) {
       throw new GameError(400, `Unknown variant "${variant}". Use one of: ${VARIANTS.join(', ')}`);
     }
@@ -79,6 +84,7 @@ export class Game {
       this.timeControl = timeControl;
     }
     this.legalCache = null;
+    this.endQuickMs = endQuickMs;
   }
 
   // Which seat does this token belong to? 'white' | 'black' | 'spectator' | null
@@ -167,18 +173,32 @@ export class Game {
   }
 
   // Mate/stalemate: does the player now to move have any legal action?
-  // (fast engine: reads the live rawBoard, no copies)
+  // Quick inline check first (fast engine, no copies); if the position is
+  // too deep for the quick budget, the full search runs in the worker pool
+  // and the game ends asynchronously when the verdict arrives.
   detectEnd() {
     const probe = Position.fromChess(this.chess);
-    const res = hasLegalAction(probe, END_SEARCH_MS);
-    if(res === 'no') {
-      if(probe.inCheck()) {
-        this.end(other(this.player), 'checkmate');
-      }
-      else {
-        this.end('draw', 'stalemate');
-      }
-    }
+    const quick = hasLegalAction(probe, this.endQuickMs);
+    if(quick === 'yes') { return; }
+    const loser = this.player;
+    const inCheck = probe.inCheck();
+    const finish = () => {
+      if(this.ended) { return; }
+      if(inCheck) { this.end(other(loser), 'checkmate'); }
+      else { this.end('draw', 'stalemate'); }
+    };
+    if(quick === 'no') { finish(); return; }
+    // The verdict is about this exact submit; staged moves by the opponent
+    // meanwhile don't change it, and end() is a no-op if the game ended
+    // another way first (resign, time).
+    pool.run('hasLegalAction', trimState(this.chess.state()), [END_SEARCH_MS], END_SEARCH_MS)
+      .then((res) => {
+        if(res === 'no') {
+          finish();
+          this.changed();
+        }
+      })
+      .catch(() => {});
   }
 
   resign(seat) {
@@ -251,10 +271,11 @@ export class Game {
     };
   }
 
-  // Moves for the player to move that can still lead to a submittable action
-  legalMoves() {
+  // Moves for the player to move that can still lead to a submittable action.
+  // Classification runs in the worker pool; concurrent callers share one job.
+  async legalMoves() {
     if(this.ended) { return []; }
-    if(this.legalCache && this.legalCache.version === this.version) { return this.legalCache.moves; }
+    if(this.legalCache && this.legalCache.version === this.version) { return this.legalCache.promise; }
     // Names via 5d-chess-js (needs skipDetection off its mate gating), classes
     // via the fast engine; both lists come from the same generator in the same
     // order.
@@ -263,11 +284,11 @@ export class Game {
     let names;
     try { names = this.chess.moves('5dpgn', false, false, false).trim().split('\n').filter(Boolean); }
     finally { this.chess.skipDetection = skip; }
-    const classes = classifyMoves(this.chess, LEGAL_MOVES_MS);
-    // 'unknown' (search timed out) is kept: never hide a possibly legal move
-    const moves = names.filter((n, i) => classes[i] !== 'illegal');
-    this.legalCache = { version: this.version, moves };
-    return moves;
+    const promise = pool.run('classify', trimState(this.chess.state()), [LEGAL_MOVES_MS], LEGAL_MOVES_MS)
+      // 'unknown' (search timed out) is kept: never hide a possibly legal move
+      .then((classes) => names.filter((n, i) => classes[i] !== 'illegal'));
+    this.legalCache = { version: this.version, promise };
+    return promise;
   }
 
   // 5DPGN names of the moves staged this action. The engine's export leaves
@@ -291,17 +312,18 @@ export class Game {
     return names;
   }
 
-  // What the opponent could do next (only meaningful on your turn); cached per position
-  currentThreats() {
+  // What the opponent could do next (only meaningful on your turn); cached
+  // per position, computed in the worker pool
+  async currentThreats() {
     if(this.ended) { return []; }
-    if(this.threatCache && this.threatCache.version === this.version) { return this.threatCache.list; }
-    const list = threats(this.chess);
-    this.threatCache = { version: this.version, list };
-    return list;
+    if(this.threatCache && this.threatCache.version === this.version) { return this.threatCache.promise; }
+    const promise = pool.run('threats', trimState(this.chess.state()), [], 8000);
+    this.threatCache = { version: this.version, promise };
+    return promise;
   }
 
   // "If I play these moves, what can the opponent do?" Nothing is changed.
-  preview(seat, moves) {
+  async preview(seat, moves) {
     this.requireTurn(seat);
     const probe = new Chess();
     probe.state(this.chess.state()); // validation stays on: illegal moves throw
@@ -312,7 +334,7 @@ export class Game {
     // Moves are validated; turn detection off so submittable() skips the engine's slow mate search
     probe.skipDetection = true;
     const complete = !probe.inCheck && probe.submittable();
-    const list = threats(probe);
+    const list = await pool.run('threats', trimState(probe.state()), [], 8000);
     let note;
     if(probe.inCheck) { note = 'After these moves your king is still in check: you could not submit this.'; }
     else if(!complete) { note = 'Turn not complete yet (more present boards need a move); threats assume you stop here.'; }
@@ -328,9 +350,11 @@ export class Game {
   }
 
   // Plain-text-friendly state for LLMs and scripts
-  textState(seat) {
+  async textState(seat) {
     const state = this.publicState(seat);
     const yourTurn = !this.ended && seat === this.player;
+    const threatsList = yourTurn ? await this.currentThreats() : [];
+    const legalMoves = yourTurn ? await this.legalMoves() : [];
     return {
       id: this.id,
       version: this.version,
@@ -355,9 +379,9 @@ export class Game {
       boards: boardText(this.chess),
       timelines: timelineGrid(this.chess, yourTurn ? seat : null),
       // What the opponent could do if you made no move (your turn only)
-      threats: yourTurn ? this.currentThreats() : [],
-      threatsText: yourTurn ? threatsText(this.currentThreats(), this.chess.inCheck) : null,
-      legalMoves: yourTurn ? this.legalMoves() : [],
+      threats: threatsList,
+      threatsText: yourTurn ? threatsText(threatsList, this.chess.inCheck) : null,
+      legalMoves,
     };
   }
 }

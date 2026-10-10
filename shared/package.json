@@ -1,0 +1,5 @@
+{
+  "name": "open5dchess-shared",
+  "private": true,
+  "type": "module"
+}

@@ -47,6 +47,13 @@ export const classifyMoves = (chess, totalBudgetMs = 4000, perMoveBudgetMs = 500
   return res;
 }
 
+//Does the player to move have any legal action at all? 'yes' | 'no' | 'timeout'.
+//'no' means checkmate (if in check) or stalemate. Used instead of the
+//engine's inCheckmate, which reports mate when its search times out.
+export const hasLegalAction = (chess, budgetMs = 10000) => {
+  return canComplete(chess, Date.now() + budgetMs, new Set());
+}
+
 //Copying a game copies its whole history, which the search doesn't need.
 //Keep only what move generation, check detection and submittable() use.
 export const trimState = (state) => {

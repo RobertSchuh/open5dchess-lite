@@ -1,0 +1,21 @@
+{
+  "name": "open5dchess-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Accountless 5D chess game server with invite links (in-memory games only)",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "5d-chess-clock": "^1.0.1",
+    "5d-chess-js": "^1.2.1",
+    "ws": "^8.22.0"
+  }
+}

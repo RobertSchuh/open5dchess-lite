@@ -1,6 +1,6 @@
 //Web worker: runs the legal move search (utils/LegalMoves) off the main thread.
 import Chess from '5d-chess-js';
-import { classifyMoves, trimState } from './LegalMoves';
+import { classifyMoves, trimState } from 'shared/legalMoves.js';
 
 self.onmessage = (e) => {
   const { key, state } = e.data;

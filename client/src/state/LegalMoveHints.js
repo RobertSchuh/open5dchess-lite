@@ -1,6 +1,6 @@
 //Legal move hints (optional, in-game settings): highlights pieces that have a
 //legal move and shows only the moves that can still lead to a submittable
-//action (see utils/LegalMoves). The search runs in a worker; until a result
+//action (see shared/legalMoves.js). The search runs in a worker; until a result
 //is ready all moves are shown and no pieces are highlighted.
 import LegalMovesWorker from 'utils/LegalMoves.worker.js?worker';
 import * as crConfig from 'state/config';

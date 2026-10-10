@@ -124,3 +124,18 @@ test('text state shows boards, staged moves and legal moves only on your turn', 
   assert.deepEqual(b.legalMoves, []);
   assert.equal(b.yourTurn, false);
 });
+
+test('in check on one board: only moves that can still lift the check there are listed for it', () => {
+  // Robert's game: White's king on L-2 is attacked by a queen that time-travelled in
+  const g = new Game({ id: 'x' });
+  const actions = ['e3', 'e6', 'Qf3', 'Nc6', 'Na3', 'Nb4', 'Nb5', 'Nxc2', 'Kd1', 'Nxa1', 'Nxc7', 'Qxc7',
+    '(0T7)Qf3>>x(0T3)f7~', '(0T7)Qc7>>x(0T2)c2~', '(-1T3)Bd3', '(-1T3)Qc2>>(0T2)d1~'];
+  actions.forEach((m, i) => play(g, i % 2 === 0 ? 'white' : 'black', [m]));
+  const onCheckedBoard = g.legalMoves().filter((m) => m.startsWith('(-2T3)'));
+  assert.ok(onCheckedBoard.includes('(-2T3)Kxd1'));
+  assert.ok(onCheckedBoard.includes('(-2T3)Qxd1'));
+  assert.ok(!onCheckedBoard.includes('(-2T3)Nc3'));
+  assert.ok(onCheckedBoard.length <= 3, onCheckedBoard.join(' '));
+  // Moves on other boards stay legal: they can be combined with Kxd1
+  assert.ok(g.legalMoves().includes('(0T8)a3'));
+});

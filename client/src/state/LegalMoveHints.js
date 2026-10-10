@@ -29,15 +29,17 @@ export default class LegalMoveHints {
     if(!this.enabled()) { return { availableMoves: moves, legalPieces: null }; }
     let key = this.key(chess);
     if(key === this.resultKey && this.resultClasses && this.resultClasses.length === moves.length) {
-      //'unknown' moves are kept: only proven-illegal moves are hidden
-      let legalMoves = moves.filter((m, i) => this.resultClasses[i] !== 'illegal');
-      //One highlight per piece (start square) that has at least one legal move
+      //'unknown' moves (search timed out) stay selectable: only proven-illegal
+      //moves are hidden. Gold piece highlights need a proven legal move.
+      let classes = this.resultClasses;
+      let shownMoves = moves.filter((m, i) => classes[i] !== 'illegal');
       let pieces = new Map();
-      for(let m of legalMoves) {
+      moves.forEach((m, i) => {
+        if(classes[i] !== 'legal') { return; }
         let s = m.start;
         pieces.set(`${s.timeline}_${s.turn}_${s.player}_${s.coordinate}`, s);
-      }
-      return { availableMoves: legalMoves, legalPieces: [...pieces.values()] };
+      });
+      return { availableMoves: shownMoves, legalPieces: [...pieces.values()] };
     }
     this.request(key, chess);
     return { availableMoves: moves, legalPieces: null };

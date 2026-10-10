@@ -28,6 +28,7 @@ Basic Props:
  - moveBuffer
  - checks
  - availableMoves
+ - hintsFor (colour the quick hint toggle controls, or null to hide it)
  - legalPieces (squares of pieces with a legal move, or null)
  - pastAvailableMoves
  - onMove
@@ -368,6 +369,7 @@ export default class Player extends React.Component {
           onMouseLeave={() => { crConfig.set({ app: { interactive: true } }, this.context); }}
         >
           <ViewMenu
+            hintsFor={this.props.hintsFor}
             onFlip={() => {
               var currentConfig = crConfig.get();
               crConfig.set({

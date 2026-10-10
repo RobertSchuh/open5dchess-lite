@@ -171,23 +171,6 @@ export default class SettingsMenu extends React.Component {
               }
             />
           </Grid>
-          <Grid item xs={12}>
-            <FormControl variant='outlined' fullWidth>
-              <InputLabel><Trans>Highlight Legal Moves</Trans></InputLabel>
-              <Select
-                label={<Trans>Highlight Legal Moves</Trans>}
-                value={this.state.config.extra.legalMoveHints === true ? 'both' : (this.state.config.extra.legalMoveHints || 'off')}
-                onChange={(event) => {
-                  this.setState(deepmerge(this.state, { config: { extra: { legalMoveHints: event.target.value } } }));
-                }}
-              >
-                <MenuItem value='off'><Trans>Off</Trans></MenuItem>
-                <MenuItem value='white'><Trans>For White</Trans></MenuItem>
-                <MenuItem value='black'><Trans>For Black</Trans></MenuItem>
-                <MenuItem value='both'><Trans>For Both Players</Trans></MenuItem>
-              </Select>
-            </FormControl>
-          </Grid>
           <Grid item xs={this.state.wideMode ? 6 : 12}>
             <FormControlLabel
               label={<Trans>Show Future Boards</Trans>}

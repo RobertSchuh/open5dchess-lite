@@ -142,6 +142,7 @@ class Analyze extends React.Component {
         statusWhitePlayerType={this.state.whitePlayerType}
         statusBlackPlayerName={this.state.blackPlayerName}
         statusBlackPlayerType={this.state.blackPlayerType}
+        hintsFor={this.state.player}
         statusWhiteActive={this.state.player === 'white'}
         allowAnalyze
         analyzeOnPreviousAction={this.analysisManager.previousAction.bind(this.analysisManager)}

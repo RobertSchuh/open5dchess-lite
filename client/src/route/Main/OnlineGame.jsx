@@ -204,6 +204,7 @@ class OnlineGame extends React.Component {
           statusWhitePlayerType='human'
           statusBlackPlayerName={this.playerName('black')}
           statusBlackPlayerType='human'
+          hintsFor={game.you === 'white' || game.you === 'black' ? game.you : null}
           statusWhiteActive={this.state.player === 'white'}
           statusIsCheckmate={result !== null && result.reason === 'checkmate'}
           statusIsFlagged={result !== null && result.reason === 'time'}

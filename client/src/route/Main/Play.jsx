@@ -165,6 +165,7 @@ class Play extends React.Component {
           statusWhitePlayerType={this.state.whitePlayerType}
           statusBlackPlayerName={this.state.blackPlayerName}
           statusBlackPlayerType={this.state.blackPlayerType}
+          hintsFor={this.state.player}
           statusWhiteActive={this.state.player === 'white'}
           statusIsCheckmate={this.state.isCheckmate}
           statusIsFlagged={this.state.isFlagged}

@@ -123,7 +123,7 @@ const defaultConfig = {
     autoRecenter: true,
     autoFlip: false,
     autoSubmit: false,
-    legalMoveHints: 'off',          //Highlight legal moves for: 'off' | 'white' | 'black' | 'both' (per player, e.g. hints for one side only in local games)
+    legalMoveHints: { white: false, black: false }, //Legal move hints per player (quick toggle in the game's view bar)
   }
 };
 

@@ -5,6 +5,7 @@
 import LegalMovesWorker from 'utils/LegalMoves.worker.js?worker';
 import { Position } from 'shared/fastPosition.js';
 import * as crConfig from 'state/config';
+import { normalize as normalizeHints } from 'state/hints';
 
 export default class LegalMoveHints {
   //onReady() is called when a new result arrives, so the board can redraw
@@ -16,12 +17,9 @@ export default class LegalMoveHints {
     this.resultKey = null;
     this.resultClasses = null;
   }
-  //Hints are a per-player option: 'off' | 'white' | 'black' | 'both'.
-  //Old saved settings may still hold a boolean; treat true as 'both'.
+  //Hints are per player ({ white, black }), toggled from the in-game bar
   enabled(player) {
-    let mode = crConfig.get().extra.legalMoveHints;
-    if(mode === true) { mode = 'both'; }
-    return mode === 'both' || mode === player;
+    return normalizeHints(crConfig.get().extra.legalMoveHints)[player] === true;
   }
   //Same position (including moves made so far this action) -> same key
   //(structural hash from the fast engine; chess.hash was an md5 of a FEN

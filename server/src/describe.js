@@ -3,6 +3,8 @@
 // (and so by the MCP server), so any agent gets the same information.
 import { createRequire } from 'node:module';
 import { hasLegalAction, trimState } from '../../shared/legalMoves.js';
+import { Position } from '../../shared/fastPosition.js';
+import * as enginePiece from '../../shared/engine/piece.js';
 
 const require = createRequire(import.meta.url);
 const Chess = require('5d-chess-js');
@@ -132,31 +134,23 @@ export const timelineGrid = (chess, you = null) => {
   return out.join('\n');
 };
 
-// Piece standing on a square of a specific board (timeline, turn, player to move)
-const pieceAt = (board, sq, player) => {
-  const tl = board.timelines.find((t) => t.timeline === sq.timeline);
-  if(!tl) { return null; }
-  const turn = tl.turns.find((t) => t.turn === sq.turn && t.player === player);
-  if(!turn) { return null; }
-  return turn.pieces.find((p) => p.position.coordinate === sq.coordinate) || null;
-};
-
-const isTravel = (m) => m.start.timeline !== m.end.timeline || m.start.turn !== m.end.turn;
+const isTravelRaw = (m) => m[0][0] !== m[1][0] || m[0][1] !== m[1][1];
 
 // What the opponent could do next if `chess`'s player made no move at all.
 // Returns [{ move, kind: 'mate'|'check'|'capture', captured, travel }], most
 // dangerous first. If you're already in check, those checks are the threats.
+// Per-move analysis runs on the fast engine (shared/fastPosition); only the
+// 5DPGN naming of opponent moves still goes through 5d-chess-js.
 export const threats = (chess, budgetMs = 6000) => {
   const deadline = Date.now() + budgetMs;
-  const probe = new Chess();
-  probe.state(trimState(chess.state()));
-  probe.skipDetection = true;
-  const me = probe.player;
+  const root = Position.fromChess(chess);
+  const me = root.player;
   const them = me === 'white' ? 'black' : 'white';
+  const myParity = root.action % 2;
 
-  if(probe.inCheck) {
-    // Captures of our king(s) that exist right now
-    return probe.checks('object').map((c) => ({
+  if(root.inCheck()) {
+    // Captures of our king(s) that exist right now (named via the parsed engine)
+    return chess.checks('object').map((c) => ({
       move: `${them} piece on L${c.start.timeline} T${c.start.turn} ${c.start.coordinate} attacks your king on L${c.end.timeline} T${c.end.turn} ${c.end.coordinate}`,
       kind: 'check',
       captured: 'king',
@@ -164,39 +158,44 @@ export const threats = (chess, budgetMs = 6000) => {
     }));
   }
 
-  // Let the opponent move: submit the moves staged so far, or pass (empty action)
-  try {
-    if(probe.moveBuffer.length > 0 && probe.submittable()) { probe.submit(); }
-    else { probe.pass(); }
-  }
-  catch(err) { return []; }
-  const board = probe.board;
-  const objects = probe.moves('object', false, false, false);
-  const names = probe.moves('5dpgn', false, false, false).trim().split('\n');
+  // Let the opponent move: count the staged moves as played if they complete
+  // the turn, otherwise pretend we pass on every remaining present board
+  const base = (chess.moveBuffer.length > 0 && root.submittable()) ? root.submit() : root.pass();
+  if(!base) { return []; }
+  const rawMoves = base.moves();
+  // 5DPGN names for the same move list (same generator, same order)
+  const nameProbe = new Chess();
+  nameProbe.state(trimState(chess.state()));
+  nameProbe.skipDetection = true;
+  if(chess.moveBuffer.length > 0 && root.submittable()) { nameProbe.submit(); }
+  else { nameProbe.pass(); }
+  const names = nameProbe.moves('5dpgn', false, false, false).trim().split('\n');
   const res = [];
-  for(let i = 0;i < objects.length;i++) {
-    const m = objects[i];
-    const target = pieceAt(board, m.end, them);
-    const captured = target && target.player === me ? NAME[LETTER(target)] || 'piece' : null;
+  for(let i = 0;i < rawMoves.length;i++) {
+    const m = rawMoves[i];
+    const dest = m[1];
+    const destBoard = base.board[dest[0]] && base.board[dest[0]][dest[1]];
+    const targetInt = destBoard ? Math.abs(destBoard[dest[2]][dest[3]]) : 0;
+    const targetChar = targetInt !== 0 && targetInt % 2 === myParity ? enginePiece.toChar(targetInt, true) : null;
+    const captured = targetChar ? NAME[targetChar] || 'piece' : null;
     let kind = captured ? 'capture' : null;
     let maybeMate = false; // mate search ran out of time
     // Does this move alone give check, or even mate? Only when it completes
     // the opponent's turn by itself (one present board), and while time lasts.
     if(Date.now() < deadline) {
-      const next = probe.copy();
-      next.move(m);
+      const next = base.clone().apply(m);
       if(next.submittable()) {
-        next.submit();
-        if(next.inCheck) {
+        const after = next.submit();
+        if(after.inCheck()) {
           kind = 'check';
-          const mate = Date.now() < deadline ? hasLegalAction(next, Math.min(2000, deadline - Date.now())) : 'timeout';
+          const mate = Date.now() < deadline ? hasLegalAction(after, Math.min(2000, deadline - Date.now())) : 'timeout';
           if(mate === 'no') { kind = 'mate'; }
           else if(mate === 'timeout') { maybeMate = true; }
         }
       }
     }
     if(kind) {
-      res.push({ move: names[i], kind, captured, travel: isTravel(m), maybeMate, value: captured ? VALUE[LETTER(target)] || 1 : 0 });
+      res.push({ move: names[i], kind, captured, travel: isTravelRaw(m), maybeMate, value: captured ? VALUE[targetChar] || 1 : 0 });
     }
   }
   const rank = { mate: 3, check: 2, capture: 1 };

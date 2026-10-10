@@ -3,6 +3,7 @@
 //action (see shared/legalMoves.js). The search runs in a worker; until a result
 //is ready all moves are shown and no pieces are highlighted.
 import LegalMovesWorker from 'utils/LegalMoves.worker.js?worker';
+import { Position } from 'shared/fastPosition.js';
 import * as crConfig from 'state/config';
 
 export default class LegalMoveHints {
@@ -19,8 +20,10 @@ export default class LegalMoveHints {
     return crConfig.get().extra.legalMoveHints === true;
   }
   //Same position (including moves made so far this action) -> same key
+  //(structural hash from the fast engine; chess.hash was an md5 of a FEN
+  //export and showed up in profiles)
   key(chess) {
-    return chess.actionHistory.length + ':' + chess.hash;
+    return chess.rawAction + ':' + Position.fromChess(chess).hash();
   }
   //Returns { availableMoves, legalPieces } for getBoard().
   //legalPieces is null while hints are off or not computed yet.
@@ -47,7 +50,9 @@ export default class LegalMoveHints {
   request(key, chess) {
     if(this.pending && this.pending.key === key) { return; }
     if(this.busy && this.busyKey === key) { return; }
-    this.pending = { key: key, state: chess.state() };
+    //postMessage's structured clone copies the raw board for the worker;
+    //no serialization on this side
+    this.pending = { key: key, state: { rawBoard: chess.rawBoard, rawAction: chess.rawAction, rawPromotionPieces: chess.rawPromotionPieces } };
     this.sendNext();
   }
   sendNext() {

@@ -3,6 +3,7 @@
 import { createRequire } from 'node:module';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { classifyMoves, hasLegalAction, trimState } from '../../shared/legalMoves.js';
+import { Position } from '../../shared/fastPosition.js';
 import { threats, threatsText, timelineGrid } from './describe.js';
 
 const require = createRequire(import.meta.url);
@@ -166,13 +167,12 @@ export class Game {
   }
 
   // Mate/stalemate: does the player now to move have any legal action?
+  // (fast engine: reads the live rawBoard, no copies)
   detectEnd() {
-    const probe = new Chess();
-    probe.state(trimState(this.chess.state()));
-    probe.skipDetection = true;
+    const probe = Position.fromChess(this.chess);
     const res = hasLegalAction(probe, END_SEARCH_MS);
     if(res === 'no') {
-      if(probe.inCheck) {
+      if(probe.inCheck()) {
         this.end(other(this.player), 'checkmate');
       }
       else {
@@ -255,11 +255,15 @@ export class Game {
   legalMoves() {
     if(this.ended) { return []; }
     if(this.legalCache && this.legalCache.version === this.version) { return this.legalCache.moves; }
-    const probe = new Chess();
-    probe.state(trimState(this.chess.state()));
-    probe.skipDetection = true;
-    const names = probe.moves('5dpgn', false, false, false).trim().split('\n').filter(Boolean);
-    const classes = classifyMoves(probe, LEGAL_MOVES_MS);
+    // Names via 5d-chess-js (needs skipDetection off its mate gating), classes
+    // via the fast engine; both lists come from the same generator in the same
+    // order.
+    const skip = this.chess.skipDetection;
+    this.chess.skipDetection = true;
+    let names;
+    try { names = this.chess.moves('5dpgn', false, false, false).trim().split('\n').filter(Boolean); }
+    finally { this.chess.skipDetection = skip; }
+    const classes = classifyMoves(this.chess, LEGAL_MOVES_MS);
     // 'unknown' (search timed out) is kept: never hide a possibly legal move
     const moves = names.filter((n, i) => classes[i] !== 'illegal');
     this.legalCache = { version: this.version, moves };

@@ -1,0 +1,22 @@
+{
+  "name": "open5dchess-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server that lets an LLM play 5D chess on an open5dchess server via an invite link",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "bin": {
+    "open5dchess-mcp": "src/index.js"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "zod": "^4.6.5"
+  }
+}

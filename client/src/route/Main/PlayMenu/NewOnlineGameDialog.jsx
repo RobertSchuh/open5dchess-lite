@@ -21,11 +21,11 @@ import Chess from '5d-chess-js';
 import ChessClock from '5d-chess-clock';
 import store from 'store';
 
-import InviteLinks from 'components/InviteLinks';
 import * as online from 'network/online';
 
 /*
-New online game: pick variant, time control and colour, get invite links.
+New online game: pick variant, time control and colour. On success it goes
+straight to the game page, which shows the invite links once.
 Props: open, onClose
 */
 class NewOnlineGameDialog extends React.Component {
@@ -39,7 +39,6 @@ class NewOnlineGameDialog extends React.Component {
     nickname: store.get('onlineNickname') || '',
     creating: false,
     error: null,
-    created: null,
   };
   async create() {
     this.setState({ creating: true, error: null });
@@ -51,30 +50,26 @@ class NewOnlineGameDialog extends React.Component {
         creatorColor: this.state.color,
         nickname: this.state.nickname || null,
       });
-      this.setState({ created: res, creating: false });
+      this.setState({ creating: false });
+      this.props.onClose();
+      //Straight to the game page; it shows the invite links dialog there
+      const link = res.links[res.seat];
+      this.props.history.push(link.slice(link.indexOf('#') + 1));
     }
     catch(err) {
       this.setState({ error: err.message, creating: false });
     }
   }
-  openGame() {
-    const created = this.state.created;
-    const link = created.links[created.seat];
-    //Link is "<origin>/#/g/<id>?seat=<token>"; navigate inside the app
-    this.props.history.push(link.slice(link.indexOf('#') + 1));
-  }
   close() {
-    this.setState({ created: null, error: null });
+    this.setState({ error: null });
     this.props.onClose();
   }
   render() {
-    const created = this.state.created;
     return (
       <Dialog open={this.props.open} onClose={() => this.close()} fullScreen={this.props.fullScreen} fullWidth maxWidth='sm'>
         <DialogTitle><Trans>New online game</Trans></DialogTitle>
         <DialogContent>
-          {created === null ?
-            <>
+          <>
               <Box mb={2}>
                 <FormControl variant='outlined' fullWidth>
                   <InputLabel><Trans>Variant</Trans></InputLabel>
@@ -118,22 +113,13 @@ class NewOnlineGameDialog extends React.Component {
               {this.state.error ?
                 <Box mt={2}><Typography color='error'>{this.state.error}</Typography></Box>
               : null}
-            </>
-          :
-            <InviteLinks links={created.links} seat={created.seat} />
-          }
+          </>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => this.close()}><Trans>Cancel</Trans></Button>
-          {created === null ?
-            <Button color='primary' variant='contained' disabled={this.state.creating} onClick={() => this.create()}>
-              <Trans>Create game</Trans>
-            </Button>
-          :
-            <Button color='primary' variant='contained' onClick={() => this.openGame()}>
-              <Trans>Go to game</Trans>
-            </Button>
-          }
+          <Button color='primary' variant='contained' disabled={this.state.creating} onClick={() => this.create()}>
+            <Trans>Create game</Trans>
+          </Button>
         </DialogActions>
       </Dialog>
     );

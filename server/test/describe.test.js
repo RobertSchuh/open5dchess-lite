@@ -74,3 +74,38 @@ test('rules endpoint and LLM page are plain text with rules, state and API', asy
   assert.equal(prev.status, 200);
   assert.equal((await prev.json()).complete, true);
 });
+
+test('delta state: only new boards in full, macro-grid names the rest', async () => {
+  const g = replay(LOSS.slice(0, 13)); //black to move, mid-game
+  const first = await g.textState('black', { since: -1 });
+  const v1 = first.stateVersion;
+  //since=-1: every board is new -> all shown
+  const shownCount = (s) => (s.timelines.match(/^L-?\d+ T\d+[wb]/gm) || []).length;
+  const total = first.timelines.match(/\((\d+) of (\d+);/);
+  assert.equal(total[1], total[2]);
+  //no change since v1: only the playable/latest anchor board is shown
+  const second = await g.textState('black', { since: v1 });
+  assert.equal(shownCount(second), 1);
+  assert.match(second.timelines, /All boards by name/);
+  assert.match(second.timelines, /L0 T7b \(you can move here\)/);
+  //after a move, the newly created board is the one shown
+  g.move('black', 'Nxa1'); //the 14th action of the game
+  g.submit('black');
+  const third = await g.textState('white', { since: v1 });
+  assert.equal(shownCount(third), 1);
+  assert.match(third.timelines, /L0 T8w \(you can move here\)/);
+  //without since, the old full grid is unchanged
+  const full = await g.textState('black');
+  assert.match(full.timelines, /Timeline L0 \(active/);
+});
+
+test('single board fetch returns exact boards and 404s for missing ones', async () => {
+  const g = replay(['e4', 'e5']);
+  const b = await g.singleBoard('white', '0', '1w');
+  assert.match(b.board, /L0 T1w/);
+  assert.match(b.board, /2 P P P P P P P P/);
+  const latest = await g.singleBoard('white', '0', '2W'); //case-insensitive
+  assert.match(latest.board, /you can move here/);
+  await assert.rejects(() => g.singleBoard('white', '5', '1w'), (e) => e.status === 404);
+  await assert.rejects(() => g.singleBoard('white', '0', '9b'), (e) => e.status === 404);
+});

@@ -54,7 +54,7 @@ test('MCP over stdio: join by link, play, wait, see the result', async () => {
   await client.connect(transport);
   try {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    assert.deepEqual(tools, ['create_game', 'get_rules', 'get_state', 'join_game', 'list_legal_moves', 'make_moves', 'preview_moves', 'resign', 'undo_staged_move', 'wait_for_turn']);
+    assert.deepEqual(tools, ['create_game', 'get_board', 'get_rules', 'get_state', 'join_game', 'list_legal_moves', 'make_moves', 'preview_moves', 'resign', 'undo_staged_move', 'wait_for_turn']);
 
     const call = async (name, args = {}) => {
       const res = await client.callTool({ name, arguments: args });
@@ -85,6 +85,14 @@ test('MCP over stdio: join by link, play, wait, see the result', async () => {
     r = await call('make_moves', { moves: ['e5'] });
     assert.equal(r.isError, false);
     assert.match(r.text, /Played and submitted: e5/);
+    //Delta mode: the cursor from join/wait means this response lists boards by
+    //name and prints only the new ones in full
+    assert.match(r.text, /All boards by name/);
+    r = await call('get_board', { timeline: '0', turn: '1b' });
+    assert.match(r.text, /L0 T1b/);
+    assert.match(r.text, /5 \. \. \. \. \. \. \. \./); //before ...e5: e5 empty
+    r = await call('get_state', { full: true });
+    assert.match(r.text, /Timeline L0 \(active/); //full grid again on request
 
     await white.moves(['g4']);
     r = await call('get_state');

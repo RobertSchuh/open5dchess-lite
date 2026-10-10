@@ -21,6 +21,9 @@ const NOTATION = `5D chess notation (5DPGN), as used by all tools:
 Always copy moves exactly from the legal move list; it only contains moves that can complete a legal turn.`;
 
 let game = null; // current GameClient
+let seenVersion = null; // last stateVersion whose boards we fetched in full
+const cursor = () => seenVersion;
+const sawState = (s) => { if(typeof s.stateVersion === 'number') { seenVersion = s.stateVersion; } return s; };
 
 const text = (t) => ({ content: [{ type: 'text', text: t }] });
 const fail = (t) => ({ content: [{ type: 'text', text: t }], isError: true });
@@ -51,7 +54,8 @@ server.registerTool('join_game', {
   inputSchema: { link: z.string().describe('The invite link') },
 }, run(async ({ link }) => {
   const client = GameClient.fromLink(link);
-  const s = await client.state();
+  seenVersion = null;
+  const s = sawState(await client.state());
   game = client;
   const rules = await client.rules().catch(() => NOTATION);
   return text(`${rules}\n\n=== JOINED ===\n${formatState(s)}`);
@@ -91,6 +95,7 @@ server.registerTool('create_game', {
   const base = server_url || DEFAULT_SERVER;
   const res = await createGame(base, { creatorColor: color, variant, timeControl: time_control || null, nickname: 'Claude' });
   const opponent = res.seat === 'white' ? 'black' : 'white';
+  seenVersion = null;
   game = GameClient.fromLink(res.links[res.seat]);
   return text(`Game created. You play ${res.seat}.\n` +
     `Give the user this link to play ${opponent}: ${res.links[opponent]}\n` +
@@ -105,10 +110,25 @@ server.registerTool('get_state', {
   inputSchema: {
     include_pgn: z.boolean().default(false).describe('Also return the whole game in 5DPGN'),
     view: z.enum(['all', 'latest']).default('all').describe('all = every board of every timeline; latest = only the latest board per timeline'),
+    full: z.boolean().default(false).describe('true = print every board again even if already shown earlier in this conversation (use after losing track)'),
   },
-}, run(async ({ include_pgn, view }) => {
-  const s = await needGame().state();
+}, run(async ({ include_pgn, view, full }) => {
+  const s = sawState(await needGame().state(full ? null : cursor()));
   return text(formatState(s, { includePgn: include_pgn, view }));
+}));
+
+server.registerTool('get_board', {
+  title: 'Fetch one specific board',
+  description: 'Re-print a single board by name when you are unsure what it looked like, e.g. timeline 0, turn "14b" ' +
+    '(the names shown in the board overview). Boards never change once their turn is over, so an earlier print is ' +
+    'still valid - fetch only when in doubt.',
+  inputSchema: {
+    timeline: z.string().describe('Timeline number, e.g. "0", "1", "-1"'),
+    turn: z.string().describe('Turn plus side, e.g. "14w" or "14b"'),
+  },
+}, run(async ({ timeline, turn }) => {
+  const b = await needGame().board(timeline, turn);
+  return text(b.board);
 }));
 
 server.registerTool('list_legal_moves', {
@@ -132,7 +152,7 @@ server.registerTool('make_moves', {
     submit: z.boolean().default(true),
   },
 }, run(async ({ moves, submit }) => {
-  const s = await needGame().moves(moves, submit);
+  const s = sawState(await needGame().moves(moves, submit, cursor()));
   const done = submit ? `Played and submitted: ${moves.join(' ')}` : `Staged (not submitted): ${moves.join(' ')}`;
   return text(`${done}\n${formatState(s, { includeMoves: !submit })}`);
 }));
@@ -141,7 +161,7 @@ server.registerTool('undo_staged_move', {
   title: 'Undo a staged move',
   description: 'Take back the last move staged with make_moves(submit=false). Submitted turns cannot be undone.',
 }, run(async () => {
-  const s = await needGame().undo();
+  const s = sawState(await needGame().undo(cursor()));
   return text(formatState(s));
 }));
 
@@ -151,7 +171,7 @@ server.registerTool('wait_for_turn', {
     'if they have not moved yet; then you can chat with the user and call it again.',
   inputSchema: { timeout_seconds: z.number().int().min(1).max(55).default(45) },
 }, run(async ({ timeout_seconds }) => {
-  const s = await needGame().waitForTurn(timeout_seconds);
+  const s = sawState(await needGame().waitForTurn(timeout_seconds, cursor()));
   if(s.timeout && !s.yourTurn && !s.result) {
     return text(`Still waiting: ${s.toMove} has not moved yet (waited ${timeout_seconds}s). Call wait_for_turn again when ready.`);
   }

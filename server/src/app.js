@@ -57,6 +57,12 @@ const baseUrl = (req, publicUrl) => {
 
 const gameLink = (base, id, token) => `${base}/#/g/${id}?seat=${token}`;
 
+// ?since=<version> switches the state's board text to delta mode
+const sinceParam = (url) => {
+  const v = url.searchParams.get('since');
+  return v === null ? null : (Number.isInteger(Number(v)) ? Number(v) : null);
+};
+
 const sendText = (res, status, text) => {
   res.writeHead(status, {
     'Content-Type': 'text/plain; charset=utf-8',
@@ -152,7 +158,12 @@ export const createApp = ({
     const action = parts[3];
 
     if(action === 'state' && req.method === 'GET') {
-      return sendJson(res, 200, await game.textState(seat));
+      return sendJson(res, 200, await game.textState(seat, { since: sinceParam(url) }));
+    }
+
+    // One specific board as text: /board?seat=&l=<timeline>&t=<turn+side, e.g. 14b>
+    if(action === 'board' && req.method === 'GET') {
+      return sendJson(res, 200, await game.singleBoard(seat, url.searchParams.get('l'), url.searchParams.get('t')));
     }
 
     // Body: { moves: ["e4"], submit: true }. All moves of one request are
@@ -180,7 +191,7 @@ export const createApp = ({
         }
         throw err;
       }
-      return sendJson(res, 200, await game.textState(seat));
+      return sendJson(res, 200, await game.textState(seat, { since: sinceParam(url) }));
     }
 
     // Everything an LLM agent needs in one plain-text page: rules, state, how to move
@@ -200,12 +211,12 @@ export const createApp = ({
 
     if(action === 'undo' && req.method === 'POST') {
       game.undo(seat);
-      return sendJson(res, 200, await game.textState(seat));
+      return sendJson(res, 200, await game.textState(seat, { since: sinceParam(url) }));
     }
 
     if(action === 'resign' && req.method === 'POST') {
       game.resign(seat);
-      return sendJson(res, 200, await game.textState(seat));
+      return sendJson(res, 200, await game.textState(seat, { since: sinceParam(url) }));
     }
 
     // Long-poll until it's this seat's turn or the game ends
@@ -213,9 +224,10 @@ export const createApp = ({
     if(action === 'wait' && req.method === 'GET') {
       const since = Number(url.searchParams.get('since') ?? -1);
       const timeoutMs = Math.min(Number(url.searchParams.get('timeout') ?? WAIT_DEFAULT_MS) || WAIT_DEFAULT_MS, WAIT_MAX_MS);
+      const deltaSince = sinceParam(url);
       const ready = () => game.removed || game.ended ||
         (seat === 'spectator' ? game.version > since : game.player === seat);
-      if(ready()) { return sendJson(res, 200, await game.textState(seat)); }
+      if(ready()) { return sendJson(res, 200, await game.textState(seat, { since: deltaSince })); }
       await new Promise((resolve) => {
         let done = false;
         const finish = async (timedOut) => {
@@ -224,7 +236,7 @@ export const createApp = ({
           off();
           clearTimeout(timer);
           if(game.removed) { sendJson(res, 404, { error: 'Game expired' }); }
-          else { sendJson(res, 200, Object.assign(await game.textState(seat), timedOut ? { timeout: true } : {})); }
+          else { sendJson(res, 200, Object.assign(await game.textState(seat, { since: deltaSince }), timedOut ? { timeout: true } : {})); }
           resolve();
         };
         const off = game.onChange(() => { if(ready()) { finish(false); } });

@@ -37,7 +37,11 @@ export const llmPage = async (game, seat, baseUrl, token) => {
 HOW TO PLAY OVER HTTP (seat token included in every URL)
 - This page (rules + state):  GET  ${api}/llm?${q}
 - State as JSON:              GET  ${api}/state?${q}
-- Wait for your turn:         GET  ${api}/wait?${q}&timeout=45000   (returns when it's your turn or after 45 s)
+  Add &since=<stateVersion from an earlier response> and the board text becomes a delta:
+  an overview of all board names plus full grids only for new/changed/current boards.
+  Boards never change once their turn is over, so earlier prints stay valid.
+- One specific board:         GET  ${api}/board?${q}&l=<timeline>&t=<turn+side>   e.g. l=0&t=14b
+- Wait for your turn:         GET  ${api}/wait?${q}&timeout=45000   (returns when it's your turn or after 45 s; also accepts &since=)
 - Check a move first:         POST ${api}/preview?${q}   body {"moves": ["e4"]}   -> what the opponent could do after it
 - Play and submit:            POST ${api}/moves?${q}     body {"moves": ["e4"], "submit": true}
 - Resign:                     POST ${api}/resign?${q}

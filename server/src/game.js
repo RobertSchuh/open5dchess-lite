@@ -5,7 +5,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { classifyMoves, hasLegalAction, trimState } from '../../shared/legalMoves.js';
 import { Position } from '../../shared/fastPosition.js';
 import { pool } from './analysisPool.js';
-import { threats, threatsText, timelineGrid } from './describe.js';
+import { threats, threatsText, timelineGrid, boardsData, renderBoard, macroGrid } from './describe.js';
 
 const require = createRequire(import.meta.url);
 const Chess = require('5d-chess-js');
@@ -85,6 +85,10 @@ export class Game {
     }
     this.legalCache = null;
     this.endQuickMs = endQuickMs;
+    // First version at which each board (by name + content) was rendered;
+    // lets clients fetch only boards new since their last look (boards are
+    // immutable once their turn is over, so names are stable references)
+    this.boardStamps = new Map();
   }
 
   // Which seat does this token belong to? 'white' | 'black' | 'spectator' | null
@@ -349,8 +353,37 @@ export class Game {
     };
   }
 
-  // Plain-text-friendly state for LLMs and scripts
-  async textState(seat) {
+  // Stamp boards with the version they (or their current content) first
+  // appeared at; returns the structured board data of this position.
+  #stampBoards(data) {
+    for(const tl of data.timelines) {
+      for(const b of tl.boards) {
+        const stamp = this.boardStamps.get(b.key);
+        if(!stamp || stamp.hash !== b.hash) {
+          this.boardStamps.set(b.key, { version: this.version, hash: b.hash });
+        }
+        b.sinceVersion = this.boardStamps.get(b.key).version;
+      }
+    }
+    return data;
+  }
+
+  // One specific board as text, e.g. l='1', t='14b' (fetch-a-board API)
+  async singleBoard(seat, l, t) {
+    const data = this.#stampBoards(boardsData(this.chess, !this.ended && seat === this.player ? seat : null));
+    const tl = data.timelines.find((x) => String(x.L) === String(l));
+    const want = String(t).toLowerCase().replace(/^t/, '');
+    const b = tl && tl.boards.find((x) => `${x.turn}${x.player[0]}` === want);
+    if(!b) { throw new GameError(404, `No board L${l} T${t}. Boards: ` + data.timelines.map((x) => `L${x.L} T...${x.latestLabel}`).join(', ')); }
+    return { board: renderBoard(b, data.height), label: b.label };
+  }
+
+  // Plain-text-friendly state for LLMs and scripts.
+  // With `since` (a version from an earlier response), the timelines text
+  // contains the macro-grid plus full grids ONLY for boards that are new or
+  // changed since then - plus every playable/latest board as an anchor, so a
+  // client never has to rely on remembering a critical board correctly.
+  async textState(seat, { since = null } = {}) {
     const state = this.publicState(seat);
     const yourTurn = !this.ended && seat === this.player;
     const threatsList = yourTurn ? await this.currentThreats() : [];
@@ -377,12 +410,34 @@ export class Game {
       pgn: this.chess.export('5dpgn'),
       // Latest board of each timeline, and every board of every timeline as a grid
       boards: boardText(this.chess),
-      timelines: timelineGrid(this.chess, yourTurn ? seat : null),
+      timelines: this.#timelinesText(seat, yourTurn, since),
+      stateVersion: this.version,
       // What the opponent could do if you made no move (your turn only)
       threats: threatsList,
       threatsText: yourTurn ? threatsText(threatsList, this.chess.inCheck) : null,
       legalMoves,
     };
+  }
+  #timelinesText(seat, yourTurn, since) {
+    if(since === null) {
+      return timelineGrid(this.chess, yourTurn ? seat : null);
+    }
+    const data = this.#stampBoards(boardsData(this.chess, yourTurn ? seat : null));
+    const shown = new Set();
+    const micros = [];
+    for(const tl of data.timelines) {
+      for(const b of tl.boards) {
+        if(b.sinceVersion > since || b.playable || b.latest) {
+          shown.add(b.key);
+          micros.push(renderBoard(b, data.height));
+        }
+      }
+    }
+    const total = data.timelines.reduce((n, tl) => n + tl.boards.length, 0);
+    const parts = [macroGrid(data, shown)];
+    parts.push('', `New/changed and current boards (${micros.length} of ${total}; the rest are unchanged, see get_board):`);
+    parts.push('', micros.join('\n\n'));
+    return parts.join('\n');
   }
 }
 

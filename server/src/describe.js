@@ -92,6 +92,66 @@ const boardRows = (turn) => {
   return grid.map((row) => row.join(''));
 };
 
+// Structured board data: one walk over the parsed multiverse.
+// Boards are immutable once their turn is over, so (L, turn, side) is a
+// stable name and the content hash changes only for staged (uncommitted) work.
+export const boardsData = (chess, you = null) => {
+  const board = chess.board;
+  const timelines = [...board.timelines].sort((a, b) => a.timeline - b.timeline);
+  const res = { width: board.width || 8, height: board.height || 8, timelines: [] };
+  for(const tl of timelines) {
+    const latest = tl.turns[tl.turns.length - 1];
+    const entry = {
+      L: tl.timeline,
+      active: tl.active,
+      present: tl.present,
+      toMove: latest.player,
+      latestLabel: `T${latest.turn}${latest.player[0]}`,
+      boards: [],
+    };
+    for(const t of tl.turns) {
+      const rows = boardRows(t);
+      let h = 0x811c9dc5 | 0;
+      for(const row of rows) {
+        for(let i = 0;i < row.length;i++) { h = Math.imul(h ^ row.charCodeAt(i), 0x01000193); }
+      }
+      entry.boards.push({
+        key: `${tl.timeline}:${t.turn}${t.player[0]}`,
+        label: `L${tl.timeline} T${t.turn}${t.player[0]}`,
+        turn: t.turn,
+        player: t.player,
+        latest: t === latest,
+        playable: t === latest && you !== null && t.player === you,
+        rows,
+        hash: h >>> 0,
+      });
+    }
+    res.timelines.push(entry);
+  }
+  return res;
+};
+
+// One board as text (used for the micro-grids and the fetch-one-board API)
+export const renderBoard = (b, height) => {
+  const out = [`${b.label}${b.playable ? ' (you can move here)' : b.latest ? ` (latest of its timeline, ${b.player} to move)` : ''}`];
+  b.rows.forEach((row, i) => out.push(`${height - i} ${row.split('').join(' ')}`));
+  out.push('  ' + 'abcdefgh'.slice(0, b.rows[0].length).split('').join(' '));
+  return out.join('\n');
+};
+
+// Compact overview: every board of every timeline by name only.
+// `shown` boards are the ones whose full grid accompanies this overview.
+export const macroGrid = (data, shown = null) => {
+  const out = ['All boards by name (one row per timeline; * = you can move there' + (shown ? ', # = full board shown below' : '') + '):'];
+  for(const tl of data.timelines) {
+    const tags = [tl.active ? 'active' : 'inactive'];
+    if(tl.present) { tags.push('present'); }
+    const cells = tl.boards.map((b) => `T${b.turn}${b.player[0]}${b.playable ? '*' : ''}${shown && shown.has(b.key) ? '#' : ''}`);
+    out.push(`L${tl.L} (${tags.join(', ')}): ${cells.join(' ')}`);
+  }
+  return out.join('\n');
+};
+
 // Every board of every timeline. Rows = timelines, columns = moments in time
 // (aligned, so boards in one column are simultaneous).
 export const timelineGrid = (chess, you = null) => {

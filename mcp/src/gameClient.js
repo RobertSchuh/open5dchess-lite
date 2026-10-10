@@ -54,9 +54,15 @@ export class GameClient {
     return data;
   }
 
-  state() { return this.request('GET', 'state'); }
-  moves(moves, submit = true) { return this.request('POST', 'moves', { body: { moves, submit } }); }
-  undo() { return this.request('POST', 'undo'); }
+  //since: a stateVersion from an earlier response -> board text becomes a
+  //delta (macro-grid + only new/changed/current boards)
+  state(since = null) { return this.request('GET', 'state', { query: since === null ? {} : { since: String(since) } }); }
+  //One specific board, e.g. board('1', '14b')
+  board(l, t) { return this.request('GET', 'board', { query: { l: String(l), t: String(t) } }); }
+  moves(moves, submit = true, since = null) {
+    return this.request('POST', 'moves', { body: { moves, submit }, query: since === null ? {} : { since: String(since) } });
+  }
+  undo(since = null) { return this.request('POST', 'undo', { query: since === null ? {} : { since: String(since) } }); }
   resign() { return this.request('POST', 'resign'); }
   // What the opponent could do after these moves (nothing is played)
   preview(moves) { return this.request('POST', 'preview', { body: { moves } }); }
@@ -66,9 +72,11 @@ export class GameClient {
     return res.text();
   }
   // Long-poll until it's our turn or the game ends (server caps at 55 s)
-  waitForTurn(timeoutSeconds = 50) {
+  waitForTurn(timeoutSeconds = 50, since = null) {
     const ms = Math.max(1, Math.min(55, timeoutSeconds)) * 1000;
-    return this.request('GET', 'wait', { query: { timeout: String(ms) }, signal: AbortSignal.timeout(ms + 10000) });
+    const query = { timeout: String(ms) };
+    if(since !== null) { query.since = String(since); }
+    return this.request('GET', 'wait', { query, signal: AbortSignal.timeout(ms + 10000) });
   }
 }
 
@@ -114,6 +122,9 @@ export const formatState = (s, { includeBoards = true, includeMoves = true, incl
   if(includeBoards) {
     if(view === 'latest' || !s.timelines) {
       lines.push('', 'Latest board of each timeline (White uppercase, Black lowercase):', s.boards.trimEnd());
+    }
+    else if(s.timelines.startsWith('All boards by name')) {
+      lines.push('', s.timelines.trimEnd()); //delta mode: text carries its own heading
     }
     else {
       lines.push('', 'All boards (rows = timelines, columns = moments in time; * = you can move there):', s.timelines.trimEnd());

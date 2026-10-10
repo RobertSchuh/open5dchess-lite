@@ -34,7 +34,8 @@ Or ask the model to start a game: it calls `create_game` and gives you a link.
 | `join_game(link)` | Take the seat the link belongs to; returns the rules primer and the position |
 | `get_rules()` | The rules primer again (5D concepts, notation, beginner mistakes) |
 | `create_game(color, variant, time_control?)` | New game; returns the link for the other seat |
-| `get_state(include_pgn?, view?)` | Every board of every timeline (or only the latest), whose turn, check, clocks, threats, legal moves |
+| `get_state(include_pgn?, view?, full?)` | Board overview + full grids for new/changed/current boards only (boards already shown earlier stay valid; `full=true` reprints everything), whose turn, check, clocks, threats, legal moves |
+| `get_board(timeline, turn)` | Re-print one specific board by name, e.g. `("1", "14b")` |
 | `preview_moves(moves[])` | What the opponent could do after these moves (captures, checks, mate threats); nothing is played |
 | `list_legal_moves()` | Moves that can be part of a legal turn |
 | `make_moves(moves[], submit=true)` | Play moves (all-or-nothing) and submit the turn |

@@ -1,426 +1,61 @@
-import * as authStore from 'state/auth';
-import * as settings from 'state/settings';
-import Delay from 'utils/Delay';
+//Local game sessions (hot-seat play and analysis), stored in the browser's
+//local database. The original project also synced sessions with the old
+//chessin5d.net account server from here; that is gone - online play now goes
+//through invite links (network/online.js + state/OnlineGameManager).
 import * as SessionGenerate from 'utils/SessionGenerate';
-import * as SessionTransform from 'utils/SessionTransform';
-
-import store from 'store';
-import axios from 'axios';
 import { init as initDb } from 'state/db';
+
 const collections = initDb();
+
 export const getCurrentSession = async (id) => {
-  //Look for session in db
   let existingSession = (await collections.currentSessions.findOne({ id: id }));
-  if((existingSession !== null && typeof existingSession.host !== 'undefined') || existingSession === null) {
-    let lastQuery = store.get('network/session/get');
-    let storedAuth = authStore.get();
-    let serverUrl = settings.get().server;
-    if(typeof lastQuery !== 'number') { lastQuery = 0; }
-    if(Date.now() - lastQuery > 333 && storedAuth.token !== null) {
-      let options = {
-        headers: {
-          'Authorization': storedAuth.token
-        }
-      };
-      try {
-        let res = (await axios.get(`${serverUrl}/sessions/${id}`, options));
-        if(res.status === 200) {
-          existingSession = res.data;
-          await collections.currentSessions.update({ id: existingSession.id }, { $set: existingSession }, { upsert: true });
-        }
-        store.set('network/session/get', Date.now());
-      }
-      catch(err) {}
-    }
-  }
   if(existingSession && existingSession._id) {
     delete existingSession._id;
   }
   return existingSession;
-}
+};
 
 export const getSession = async (id) => {
-  //Look for session in db
   let existingSession = (await collections.pastSessions.findOne({ id: id }));
-  if(existingSession !== null) {
-    return existingSession;
-  }
-  existingSession = (await collections.sessionCache.findOne({ id: id }));
-  if((existingSession !== null && typeof existingSession.host !== 'undefined') || existingSession === null) {
-    let lastQuery = store.get('network/session/get');
-    let storedAuth = authStore.get();
-    let serverUrl = settings.get().server;
-    if(typeof lastQuery !== 'number') { lastQuery = 0; }
-    if(Date.now() - lastQuery > 333 && storedAuth.token !== null) {
-      let options = {
-        headers: {
-          'Authorization': storedAuth.token
-        }
-      };
-      try {
-        let res = (await axios.get(`${serverUrl}/sessions/${id}`, options));
-        if(res.status === 200) {
-          existingSession = res.data;
-          await collections.sessionCache.update({ id: existingSession.id }, { $set: existingSession }, { upsert: true });
-        }
-        store.set('network/session/get', Date.now());
-      }
-      catch(err) {}
-    }
+  if(existingSession === null) {
+    existingSession = (await collections.sessionCache.findOne({ id: id }));
   }
   if(existingSession && existingSession._id) {
     delete existingSession._id;
   }
   return existingSession;
-}
+};
 
 export const createSession = async (online = false, variant = 'standard', format = null, player = 'white', ranked = false, emitter = null) => {
-  if(online) {
-    let lastQuery = store.get('network/session/new');
-    let storedAuth = authStore.get();
-    let serverUrl = settings.get().server;
-    if(typeof lastQuery !== 'number') { lastQuery = 0; }
-    if(Date.now() - lastQuery > 6*1000 && storedAuth.token !== null) {
-      let options = {
-        headers: {
-          'Authorization': storedAuth.token
-        }
-      };
-      try {
-        let res = (await axios.post(`${serverUrl}/sessions/new`, {
-          player: player,
-          variant: variant,
-          format: format,
-          ranked: ranked
-        }, options));
-        let newSession = res.data;
-        await collections.sessionRequests.update({ id: newSession.id }, { $set: newSession }, { upsert: true });
-        store.set('network/session/new', Date.now());
-        if(emitter !== null) {
-          emitter.emit('sessionsUpdate');
-        }
-        return newSession;
-      }
-      catch(err) {}
-    }
+  let newSession = SessionGenerate.generate(variant, format);
+  await collections.currentSessions.update({ id: newSession.id }, { $set: newSession }, { upsert: true });
+  if(emitter !== null) {
+    emitter.emit('sessionsUpdate');
   }
-  else {
-    let newSession = SessionGenerate.generate(variant, format);
-    await collections.currentSessions.update({ id: newSession.id }, { $set: newSession }, { upsert: true });
-    if(emitter !== null) {
-      emitter.emit('sessionsUpdate');
-    }
-    return newSession;
-  }
-}
-
-const getPastSessions = async () => {
-  let lastQuery = store.get('network/games/get');
-  let storedAuth = authStore.get();
-  let serverUrl = settings.get().server;
-  if(typeof lastQuery !== 'number') { lastQuery = 0; }
-  if(Date.now() - lastQuery > 2*1000 && storedAuth.token !== null) {
-    let options = {
-      headers: {
-        'Authorization': storedAuth.token
-      }
-    };
-    let res = (await axios.post(`${serverUrl}/games`, {
-      query: {
-        $or: [
-          { white: storedAuth.username },
-          { black: storedAuth.username }
-        ]
-      },
-      sort: { endDate: -1 }
-    }, options));
-    let networkGames = res.data;
-    let bulkDbUpdates = [];
-    for(let networkGame of networkGames) {
-      let pastSession = SessionTransform.fromServerGame(networkGame);
-      bulkDbUpdates.push(
-        collections.pastSessions.update({ id: pastSession.id }, { $set: pastSession }, { upsert: true })
-      );
-    }
-    await Promise.all(bulkDbUpdates);
-    store.set('network/games/get', Date.now());
-  }
-  return (await collections.pastSessions.find({}));
-}
+  return newSession;
+};
 
 export const getSessions = async (emitter = null) => {
-  let sessions = {
-    sessionRequests: [],
-    currentSessions: [],
-    pastSessions: []
-  };
-  let lastQuery = store.get('network/sessions/get');
-  let storedAuth = authStore.get();
-  let serverUrl = settings.get().server;
-  if(typeof lastQuery !== 'number') { lastQuery = 0; }
-  if(Date.now() - lastQuery > 2*1000 && storedAuth.token !== null) {
-    let options = {
-      headers: {
-        'Authorization': storedAuth.token
-      }
-    };
-    let res = (await axios.post(`${serverUrl}/sessions`, {
-      query: {
-        $or: [
-          { white: storedAuth.username },
-          { black: storedAuth.username },
-          {
-            $and: [
-              { $or: [ { white: null }, { black: null } ] },
-              { requestJoin: storedAuth.username }
-            ]
-          }
-        ]
-      }
-    }, options));
-    let networkSessions = res.data;
-    let bulkDbUpdates = [];
-    //Remove existing online sessions within local db
-    await Promise.all([
-      collections.sessionRequests.remove({ host: { $exists: true } }, { multi: true }),
-      collections.currentSessions.remove({ host: { $exists: true } }, { multi: true })
-    ]);
-    for(let networkSession of networkSessions) {
-      if(!networkSession.started) {
-        if(networkSession.white === null || networkSession.black === null) {
-          if(networkSession.host === storedAuth.username || networkSession.requestJoin.includes(storedAuth.username)) {
-            bulkDbUpdates.push(
-              collections.sessionRequests.update({ id: networkSession.id }, { $set: networkSession }, { upsert: true })
-            );
-          }
-        }
-      }
-      else {
-        if(networkSession.white === storedAuth.username || networkSession.black === storedAuth.username) {
-          bulkDbUpdates.push(
-            collections.currentSessions.update({ id: networkSession.id }, { $set: networkSession }, { upsert: true })
-          );
-        }
-      }
-    }
-    await Promise.all(bulkDbUpdates);
-    store.set('network/sessions/get', Date.now());
-    if(emitter !== null) {
-      emitter.emit('sessionsUpdate');
-    }
-  }
+  let sessions = {};
   sessions.sessionRequests = (await collections.sessionRequests.find({}));
   sessions.currentSessions = (await collections.currentSessions.find({}).sort({ startDate: -1 }));
-  sessions.pastSessions = (await getPastSessions());
+  sessions.pastSessions = (await collections.pastSessions.find({}).sort({ endDate: -1 }));
   return sessions;
-}
+};
 
-export const getSessionsQuery = async (query = {}, projection = {}, sort = {}, limit = 100, skip = 0) => {
-  let lastQuery = store.get('network/sessions/get');
-  let storedAuth = authStore.get();
-  let serverUrl = settings.get().server;
-  if(typeof lastQuery !== 'number') { lastQuery = 0; }
-  if(Date.now() - lastQuery <= 1500) {
-    await Delay(1500 - (Date.now() - lastQuery));
-  }
-  let options = {};
-  if(storedAuth.token !== null) {
-    options = {
-      headers: {
-        'Authorization': storedAuth.token
-      }
-    };
-  }
-  let res = (await axios.post(`${serverUrl}/sessions`, {
-    query: query,
-    projection: projection,
-    sort: sort,
-    limit: limit,
-    skip: skip
-  }, options));
-  let networkSessions = res.data;
-  store.set('network/sessions/get', Date.now());
-  return networkSessions;
-}
-
-export const getPastSessionsQuery = async (query = {}, projection = {}, sort = {}, limit = 100, skip = 0) => {
-  let lastQuery = store.get('network/games/get');
-  let storedAuth = authStore.get();
-  let serverUrl = settings.get().server;
-  if(typeof lastQuery !== 'number') { lastQuery = 0; }
-  if(Date.now() - lastQuery <= 1500) {
-    await Delay(1500 - (Date.now() - lastQuery));
-  }
-  let options = {
-    headers: {
-      'Authorization': storedAuth.token
-    }
-  };
-  let res = (await axios.post(`${serverUrl}/games`, {
-    query: query,
-    projection: projection,
-    sort: sort,
-    limit: limit,
-    skip: skip
-  }, options));
-  let networkGames = res.data;
-  let networkSessions = [];
-  for(let networkGame of networkGames) {
-    let pastSession = SessionTransform.fromServerGame(networkGame);
-    networkSessions.push(pastSession);
-  }
-  store.set('network/games/get', Date.now());
-  return networkSessions;
-}
-
-export const moveSession = async (id, move) => {
-  let storedAuth = authStore.get();
-  let serverUrl = settings.get().server;
-  if(storedAuth.token !== null) {
-    let options = {
-      headers: {
-        'Authorization': storedAuth.token
-      }
-    };
-    let res = (await axios.post(`${serverUrl}/sessions/${id}/move`, move, options));
-    return res.data;
-  }
-  throw new Error('Not logged in!');
-}
-
-export const undoSession = async (id) => {
-  let storedAuth = authStore.get();
-  let serverUrl = settings.get().server;
-  if(storedAuth.token !== null) {
-    let options = {
-      headers: {
-        'Authorization': storedAuth.token
-      }
-    };
-    let res = (await axios.post(`${serverUrl}/sessions/${id}/undo`, {}, options));
-    return res.data;
-  }
-  throw new Error('Not logged in!');
-}
-
-export const submitSession = async (id) => {
-  let storedAuth = authStore.get();
-  let serverUrl = settings.get().server;
-  if(storedAuth.token !== null) {
-    let options = {
-      headers: {
-        'Authorization': storedAuth.token
-      }
-    };
-    let res = (await axios.post(`${serverUrl}/sessions/${id}/submit`, {}, options));
-    return res.data;
-  }
-  throw new Error('Not logged in!');
-}
-
-export const forfeitSession = async (id) => {
-  let storedAuth = authStore.get();
-  let serverUrl = settings.get().server;
-  if(storedAuth.token !== null) {
-    let options = {
-      headers: {
-        'Authorization': storedAuth.token
-      }
-    };
-    let res = (await axios.post(`${serverUrl}/sessions/${id}/forfeit`, {}, options));
-    return res.data;
-  }
-  throw new Error('Not logged in!');
-}
-
-export const drawSession = async (id) => {
-  let storedAuth = authStore.get();
-  let serverUrl = settings.get().server;
-  if(storedAuth.token !== null) {
-    let options = {
-      headers: {
-        'Authorization': storedAuth.token
-      }
-    };
-    let res = (await axios.post(`${serverUrl}/sessions/${id}/draw`, {}, options));
-    return res.data;
-  }
-  throw new Error('Not logged in!');
-}
-
-export const requestJoinSession = async (id) => {
-  let storedAuth = authStore.get();
-  let serverUrl = settings.get().server;
-  if(storedAuth.token !== null) {
-    let options = {
-      headers: {
-        'Authorization': storedAuth.token
-      }
-    };
-    let res = (await axios.post(`${serverUrl}/sessions/${id}/requestJoin`, {}, options));
-    return res.data;
-  }
-  throw new Error('Not logged in!');
-}
-
-export const addUserSession = async (id, username) => {
-  let storedAuth = authStore.get();
-  let serverUrl = settings.get().server;
-  if(storedAuth.token !== null) {
-    let options = {
-      headers: {
-        'Authorization': storedAuth.token
-      }
-    };
-    let res = (await axios.post(`${serverUrl}/sessions/${id}/addUser`, {
-      username: username
-    }, options));
-    return res.data;
-  }
-  throw new Error('Not logged in!');
-}
-
-export const readySession = async (id) => {
-  let storedAuth = authStore.get();
-  let serverUrl = settings.get().server;
-  if(storedAuth.token !== null) {
-    let options = {
-      headers: {
-        'Authorization': storedAuth.token
-      }
-    };
-    let res = (await axios.post(`${serverUrl}/sessions/${id}/ready`, {}, options));
-    return res.data;
-  }
-  throw new Error('Not logged in!');
-}
-
-export const unreadySession = async (id) => {
-  let storedAuth = authStore.get();
-  let serverUrl = settings.get().server;
-  if(storedAuth.token !== null) {
-    let options = {
-      headers: {
-        'Authorization': storedAuth.token
-      }
-    };
-    let res = (await axios.post(`${serverUrl}/sessions/${id}/unready`, {}, options));
-    return res.data;
-  }
-  throw new Error('Not logged in!');
-}
-
-export const startSession = async (id) => {
-  let storedAuth = authStore.get();
-  let serverUrl = settings.get().server;
-  if(storedAuth.token !== null) {
-    let options = {
-      headers: {
-        'Authorization': storedAuth.token
-      }
-    };
-    let res = (await axios.post(`${serverUrl}/sessions/${id}/start`, {}, options));
-    return res.data;
-  }
-  throw new Error('Not logged in!');
-}
+//The functions below only ever ran against the old account server
+//(SessionManager calls them when a session has a host, which no longer
+//happens). Kept as loud stubs so any forgotten path fails visibly.
+const goneWithTheServer = () => {
+  throw new Error('Account-server sessions were removed; online play uses invite links');
+};
+export const moveSession = goneWithTheServer;
+export const undoSession = goneWithTheServer;
+export const submitSession = goneWithTheServer;
+export const forfeitSession = goneWithTheServer;
+export const drawSession = goneWithTheServer;
+export const requestJoinSession = goneWithTheServer;
+export const addUserSession = goneWithTheServer;
+export const readySession = goneWithTheServer;
+export const unreadySession = goneWithTheServer;
+export const startSession = goneWithTheServer;

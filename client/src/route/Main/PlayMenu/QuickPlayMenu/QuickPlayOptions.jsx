@@ -13,7 +13,6 @@ import ChessClock from '5d-chess-clock';
 
 import EmitterContext from 'utils/EmitterContext';
 import * as settings from 'state/settings';
-import * as variantsAndFormats from 'network/variantsAndFormats';
 
 /*
 Props
@@ -30,41 +29,21 @@ export default class QuickPlayOptions extends React.Component {
     selectedVariants: settings.get().quickPlay.variants,
     selectedFormats: settings.get().quickPlay.formats
   }
-  async rankedFilter() {
-    let vAF = (await variantsAndFormats.get());
-    let variants = this.chess.variants.filter(e => e.shortName !== 'custom');
-    let formats = this.chessClock.formats;
-    if(vAF.variants.length > 0) {
-      this.setState({
-        variants: variants.filter(variant => vAF.variants.includes(variant.shortName)),
-        formats: formats.filter(format => vAF.formats.includes(format.shortName)),
-        selectedVariants: settings.get().quickPlay.variants.filter(variantShort => vAF.variants.includes(variantShort)),
-        selectedFormats: settings.get().quickPlay.formats.filter(formatShort => vAF.formats.includes(formatShort))
-      });
-    }
-    else {
-      this.setState({
-        variants: variants,
-        formats: formats,
-        selectedVariants: settings.get().quickPlay.variants,
-        selectedFormats: settings.get().quickPlay.formats
-      });
-    }
+  refresh() {
+    this.setState({
+      variants: this.chess.variants.filter(e => e.shortName !== 'custom'),
+      formats: this.chessClock.formats,
+      selectedVariants: settings.get().quickPlay.variants,
+      selectedFormats: settings.get().quickPlay.formats
+    });
   }
   componentDidMount() {
-    this.rankedFilter();
-    //Update state if auth store is changed
-    this.authListener = this.context.on('authUpdate', () => {
-      this.rankedFilter();
-    });
     //Update state if settings is changed
     this.settingsListener = this.context.on('settingsUpdate', () => {
-      this.rankedFilter();
+      this.refresh();
     });
   }
   componentWillUnmount() {
-    //Stop listening to auth store changes
-    if(typeof this.authListener === 'function') { this.authListener(); }
     //Stop listening to settings changes
     if(typeof this.settingsListener === 'function') { this.settingsListener(); }
   }

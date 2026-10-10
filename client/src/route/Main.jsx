@@ -1,21 +1,15 @@
 import React from 'react';
-import { Switch, Route } from 'react-router-dom';
+import { Switch, Route, Redirect } from 'react-router-dom';
 
 import Paper from '@material-ui/core/Paper';
 
 import Analyze from 'route/Main/Analyze';
 import AnalyzeMenu from 'route/Main/AnalyzeMenu';
 import MainAppBar from 'route/MainAppBar';
-import Dashboard from 'route/Main/Dashboard';
 import Play from 'route/Main/Play';
 import OnlineGame from 'route/Main/OnlineGame';
 import PlayMenu from 'route/Main/PlayMenu';
-import Profile from 'route/Main/Profile';
 import Settings from 'route/Main/Settings';
-import Register from 'route/Main/Register';
-import Login from 'route/Main/Login';
-import RecoverCode from 'route/Main/RecoverCode';
-import Recover from 'route/Main/Recover';
 
 export default class Main extends React.Component {
   backgroundRef = React.createRef();
@@ -44,7 +38,7 @@ export default class Main extends React.Component {
         <MainAppBar />
         <Switch>
           <Route exact path='/'>
-            <Dashboard />
+            <PlayMenu />
           </Route>
           <Route path='/g/:id'>
             <OnlineGame />
@@ -64,20 +58,8 @@ export default class Main extends React.Component {
           <Route path='/settings'>
             <Settings />
           </Route>
-          <Route path='/register'>
-            <Register />
-          </Route>
-          <Route path='/login'>
-            <Login />
-          </Route>
-          <Route path='/profile'>
-            <Profile />
-          </Route>
-          <Route path='/recover-code'>
-            <RecoverCode />
-          </Route>
-          <Route path='/recover'>
-            <Recover />
+          <Route>
+            <Redirect to='/' />
           </Route>
         </Switch>
       </>

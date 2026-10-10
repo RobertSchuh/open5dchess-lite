@@ -48,30 +48,6 @@ export default class SessionsPanel extends React.Component {
             expandIcon={<ExpandMoreIcon />}
           >
             <Typography>
-              <Trans>Game Requests</Trans>
-            </Typography>
-          </AccordionSummary>
-          <AccordionDetails>
-            {this.state.sessionRequests.length > 0 ?
-              <Grid container spacing={2}>
-                {this.state.sessionRequests.map((session, i) => (
-                  <Grid key={i} item xs={12}>
-                    <SessionCard flat session={session} />
-                  </Grid>
-                ))}
-              </Grid>
-            :
-              <Typography>
-                <Trans>No game requests...</Trans>
-              </Typography>
-            }
-          </AccordionDetails>
-        </Accordion>
-        <Accordion defaultExpanded>
-          <AccordionSummary
-            expandIcon={<ExpandMoreIcon />}
-          >
-            <Typography>
               <Trans>Current Games</Trans>
             </Typography>
           </AccordionSummary>

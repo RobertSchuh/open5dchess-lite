@@ -1,6 +1,5 @@
-const deepmerge = require('deepmerge');
-const store = require('store');
-
+import deepmerge from 'deepmerge';
+import store from 'store';
 const defaultSettings = {
   locale: 'en',
   server: 'https://server.chessin5d.net',

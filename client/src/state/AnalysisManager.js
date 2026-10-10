@@ -4,8 +4,7 @@ import { createNanoEvents } from 'nanoevents';
 import * as sessions from 'network/sessions';
 import * as LinkCompression from 'utils/LinkCompression';
 
-const deepcopy = require('deepcopy');
-
+import deepcopy from 'deepcopy';
 export default class AnalysisManager {
   constructor(id = null) {
     this.emitter = createNanoEvents();

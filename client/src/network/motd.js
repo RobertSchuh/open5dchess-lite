@@ -1,9 +1,8 @@
 import * as authStore from 'state/auth';
 import * as settings from 'state/settings';
 
-const store = require('store');
-const axios = require('axios');
-
+import store from 'store';
+import axios from 'axios';
 export const get = async () => {
   var motdData = store.get('network/motd/get');
   var storedAuth = authStore.get();

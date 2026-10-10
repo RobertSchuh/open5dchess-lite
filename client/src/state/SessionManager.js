@@ -5,8 +5,8 @@ import { createNanoEvents } from 'nanoevents';
 import * as authStore from 'state/auth';
 import * as sessions from 'network/sessions';
 
-const collections = require('state/db').init();
-
+import { init as initDb } from 'state/db';
+const collections = initDb();
 export default class SessionManager {
   constructor(id = null) {
     this.emitter = createNanoEvents();

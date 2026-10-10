@@ -16,8 +16,7 @@ import 'components/FontLists';
 
 import 'App.css';
 
-const { createNanoEvents } = require('nanoevents');
-
+import { createNanoEvents } from 'nanoevents';
 export default class StorybookSandbox extends React.Component {
   state = {
     muiTheme: muiTheme.get()

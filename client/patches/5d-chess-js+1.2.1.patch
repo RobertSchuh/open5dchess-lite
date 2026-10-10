@@ -1,0 +1,13 @@
+diff --git a/node_modules/5d-chess-js/dist/5d-chess.js b/node_modules/5d-chess-js/dist/5d-chess.js
+index 6f88d12..e8359ce 100644
+--- a/node_modules/5d-chess-js/dist/5d-chess.js
++++ b/node_modules/5d-chess-js/dist/5d-chess.js
+@@ -1067,7 +1067,7 @@ exports.isNormalCastling = (fullBoard) => {
+ 
+     if (Array.isArray(timeline) && timeline.length > 0) continue;
+ 
+-    const currTurn = timeline[0];
++    let currTurn = timeline[0];
+ 
+     currTurn = (isTurnZero) ? timeline[2] : currTurn;
+ 

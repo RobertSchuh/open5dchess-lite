@@ -22,9 +22,8 @@ import * as authStore from 'state/auth';
 import * as settings from 'state/settings';
 import * as auth from 'network/auth';
 
-const deepmerge = require('deepmerge');
-const deepequal = require('fast-deep-equal');
-
+import deepmerge from 'deepmerge';
+import deepequal from 'fast-deep-equal';
 class Register extends React.Component {
   static contextType = EmitterContext;
   state = {

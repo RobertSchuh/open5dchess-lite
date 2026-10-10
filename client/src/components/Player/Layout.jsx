@@ -7,9 +7,8 @@ import EmitterContext from 'utils/EmitterContext';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 
-const deepcopy = require('deepcopy');
-const store = require('store');
-
+import deepcopy from 'deepcopy';
+import store from 'store';
 export default class Layout extends React.Component {
   static contextType = EmitterContext;
   lastUserChange = 0;

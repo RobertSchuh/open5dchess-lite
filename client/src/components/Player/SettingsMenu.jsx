@@ -16,9 +16,8 @@ import * as crConfig from 'state/config';
 
 import * as PIXI from 'pixi.js';
 
-const deepmerge = require('deepmerge');
-const deepequal = require('fast-deep-equal');
-
+import deepmerge from 'deepmerge';
+import deepequal from 'fast-deep-equal';
 const widthThreshold = 300;
 export default class SettingsMenu extends React.Component {
   static contextType = EmitterContext;

@@ -2,7 +2,9 @@ import React from 'react';
 
 import Avatar from '@material-ui/core/Avatar';
 import Tooltip from '@material-ui/core/Tooltip';
-import Jdenticon from 'react-jdenticon';
+import JdenticonModule from 'react-jdenticon';
+// CommonJS package: Vite 8 hands back { default } here, so unwrap it.
+const Jdenticon = JdenticonModule.default ?? JdenticonModule;
 
 import * as users from 'network/users';
 

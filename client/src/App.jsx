@@ -21,8 +21,6 @@ import * as auth from 'network/auth';
 
 //App components
 import Main from 'route/Main';
-import UpdateToast from 'route/UpdateToast';
-import ConverseManager from 'route/ConverseManager';
 import Eruda from 'route/Eruda';
 
 //Importing fonts preemptively
@@ -31,8 +29,7 @@ import 'components/FontLists';
 //Custom CSS for integration
 import 'App.css';
 
-const { createNanoEvents } = require('nanoevents');
-
+import { createNanoEvents } from 'nanoevents';
 export default class App extends React.Component {
   state = {
     muiTheme: muiTheme.get()
@@ -60,9 +57,7 @@ export default class App extends React.Component {
               <SnackbarProvider maxSnack={2}>
                 <ReactPWAInstallProvider>
                   <div>
-                    <UpdateToast />
                     <Main />
-                    <ConverseManager />
                     <Eruda />
                   </div>
                 </ReactPWAInstallProvider>

@@ -19,11 +19,9 @@ import {Controlled as CodeMirror} from 'react-codemirror2';
 
 import 'codemirror/lib/codemirror.css';
 import 'codemirror/theme/mdn-like.css';
-require('codemirror/addon/mode/simple');
-require('components/CodeMirror/NotationMode');
-
-const fileDownload = require('js-file-download');
-
+import 'codemirror/addon/mode/simple';
+import 'components/CodeMirror/NotationMode';
+import fileDownload from 'js-file-download';
 /*
 Props
  - open

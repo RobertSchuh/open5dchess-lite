@@ -1,6 +1,5 @@
-const deepmerge = require('deepmerge');
-const store = require('store');
-
+import deepmerge from 'deepmerge';
+import store from 'store';
 const defaultAuth = {
   token: null,
   lastOnline: 0,

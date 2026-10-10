@@ -4,7 +4,9 @@ import { withRouter } from 'react-router';
 
 import { Trans } from '@lingui/macro';
 
-import MaterialTable from 'material-table';
+import MaterialTableModule from 'material-table';
+// CommonJS package: Vite 8 hands back { default } here, so unwrap it.
+const MaterialTable = MaterialTableModule.default ?? MaterialTableModule;
 import Typography from '@material-ui/core/Typography';
 
 import AddIcon from '@material-ui/icons/Add';

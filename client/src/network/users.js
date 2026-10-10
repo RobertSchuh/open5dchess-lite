@@ -1,10 +1,10 @@
 import * as authStore from 'state/auth';
 import * as settings from 'state/settings';
 
-const store = require('store');
-const axios = require('axios');
-var collections = require('state/db').init();
-
+import store from 'store';
+import axios from 'axios';
+import { init as initDb } from 'state/db';
+const collections = initDb();
 export const get = async (query = {}, projection = {}, sort = {}, limit = 100, skip = 0) => {
   var currentDate = Date.now();
   var storedAuth = authStore.get();

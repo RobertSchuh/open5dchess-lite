@@ -1,7 +1,6 @@
 import { encode, decode } from 'url-safe-base64';
 
-const LZUTF8 = require('lzutf8');
-
+import LZUTF8 from 'lzutf8';
 var cache = {};
 
 export const compressLink = (str) => {

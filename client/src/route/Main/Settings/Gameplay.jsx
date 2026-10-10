@@ -25,9 +25,8 @@ import { PieceSetList, resetPieceSet } from 'components/PieceLists';
 import EmitterContext from 'utils/EmitterContext';
 import * as crConfig from 'state/config';
 
-const deepmerge = require('deepmerge');
-const deepequal = require('fast-deep-equal');
-
+import deepmerge from 'deepmerge';
+import deepequal from 'fast-deep-equal';
 export default class Gameplay extends React.Component {
   static contextType = EmitterContext;
   state = {

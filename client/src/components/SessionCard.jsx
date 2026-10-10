@@ -33,8 +33,7 @@ import ChessClock from '5d-chess-clock';
 import EmitterContext from 'utils/EmitterContext';
 import * as SessionInfo from 'utils/SessionInfo';
 
-const deepequal = require('fast-deep-equal');
-
+import deepequal from 'fast-deep-equal';
 /*
 Props:
  - session - Associated session object (in the format described by SessionFormat.md)

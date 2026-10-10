@@ -4,10 +4,10 @@ import Delay from 'utils/Delay';
 import * as SessionGenerate from 'utils/SessionGenerate';
 import * as SessionTransform from 'utils/SessionTransform';
 
-const store = require('store');
-const axios = require('axios');
-const collections = require('state/db').init();
-
+import store from 'store';
+import axios from 'axios';
+import { init as initDb } from 'state/db';
+const collections = initDb();
 export const getCurrentSession = async (id) => {
   //Look for session in db
   let existingSession = (await collections.currentSessions.findOne({ id: id }));

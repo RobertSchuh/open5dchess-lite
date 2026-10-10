@@ -22,8 +22,7 @@ import * as authStore from 'state/auth';
 import * as settings from 'state/settings';
 import * as auth from 'network/auth';
 
-const deepequal = require('fast-deep-equal');
-
+import deepequal from 'fast-deep-equal';
 class Recover extends React.Component {
   static contextType = EmitterContext;
   state = {

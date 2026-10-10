@@ -10,9 +10,8 @@ import * as crPalette from 'state/palette';
 import * as crConfig from 'state/config';
 import * as crTexture from 'state/texture';
 
-const deepmerge = require('deepmerge');
-const deepequal = require('fast-deep-equal');
-
+import deepmerge from 'deepmerge';
+import deepequal from 'fast-deep-equal';
 const keylist = [
   'highlight',
   'whiteSquare',

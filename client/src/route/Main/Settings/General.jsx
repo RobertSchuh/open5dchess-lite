@@ -22,10 +22,9 @@ import EmitterContext from 'utils/EmitterContext';
 import * as settings from 'state/settings';
 import * as version from 'state/version';
 
-const deepmerge = require('deepmerge');
-const deepequal = require('fast-deep-equal');
-const browserInfo = require('browser-info');
-
+import deepmerge from 'deepmerge';
+import deepequal from 'fast-deep-equal';
+import browserInfo from 'browser-info';
 export default class General extends React.Component {
   static contextType = EmitterContext;
   state = {

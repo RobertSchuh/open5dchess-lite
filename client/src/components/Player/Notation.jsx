@@ -12,14 +12,31 @@ import GetAppIcon from '@material-ui/icons/GetApp';
 import NotationLine from 'components/Player/Notation/NotationLine';
 import ExportNotation from 'components/Player/Notation/ExportNotation';
 
-import HighlightNotationWorker from 'workerize-loader!components/Player/Notation/HighlightNotationWorker'; // eslint-disable-line import/no-webpack-loader-syntax
+import HighlightNotationWorker from 'components/Player/Notation/HighlightNotationWorker.worker.js?worker';
 import EmitterContext from 'utils/EmitterContext';
 import * as crConfig from 'state/config';
 import * as muiTheme from 'state/theme';
 
 import * as PIXI from 'pixi.js';
 
-const highlightNotationWorker = new HighlightNotationWorker();
+//Small promise wrapper around the worker, same call shape workerize-loader gave
+const highlightNotationWorker = (() => {
+  const worker = new HighlightNotationWorker();
+  const pending = new Map();
+  let nextId = 0;
+  worker.onmessage = (e) => {
+    const resolve = pending.get(e.data.id);
+    pending.delete(e.data.id);
+    if(resolve) { resolve(e.data.result); }
+  };
+  return {
+    extractHighlightNotation: (...args) => new Promise((resolve) => {
+      const id = nextId++;
+      pending.set(id, resolve);
+      worker.postMessage({ id, args });
+    })
+  };
+})();
 
 export default class Notation extends React.Component {
   static contextType = EmitterContext;

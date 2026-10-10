@@ -21,9 +21,8 @@ import Renderer from 'components/Player/Renderer';
 import EmitterContext from 'utils/EmitterContext';
 import * as crPalette from 'state/palette';
 
-const deepmerge = require('deepmerge');
-const deepequal = require('fast-deep-equal');
-
+import deepmerge from 'deepmerge';
+import deepequal from 'fast-deep-equal';
 export default class Palette extends React.Component {
   static contextType = EmitterContext;
   state = {

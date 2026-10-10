@@ -4,8 +4,8 @@ import PieceSound from 'assets/sound/piece.flac';
 import ReverseSound from 'assets/sound/reverse.flac';
 import SubmitSound from 'assets/sound/submit.flac';
 
-var collections = require('state/db').init();
-
+import { init as initDb } from 'state/db';
+const collections = initDb();
 const defaultAudio = {
   background: {
     audio: AmbientSound,

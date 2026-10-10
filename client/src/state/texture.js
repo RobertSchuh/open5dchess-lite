@@ -1,5 +1,5 @@
-var collections = require('state/db').init();
-
+import { init as initDb } from 'state/db';
+const collections = initDb();
 export const set = async (key, name, texture, emitter = null) => {
   var newTexture = {
     key: key,

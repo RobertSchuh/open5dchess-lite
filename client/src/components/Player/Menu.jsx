@@ -16,8 +16,7 @@ import YoutubeSearchedForIcon from '@material-ui/icons/YoutubeSearchedFor';
 
 import * as PIXI from 'pixi.js';
 
-const deepmerge = require('deepmerge');
-
+import deepmerge from 'deepmerge';
 export default class Menu extends React.Component {
   state = {
     showStatus: false,

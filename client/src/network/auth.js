@@ -1,8 +1,7 @@
 import * as authStore from 'state/auth';
 import * as settings from 'state/settings';
 
-const axios = require('axios');
-
+import axios from 'axios';
 const authCheck = async (emitter) => {
   var storedAuth = authStore.get();
   var serverUrl = settings.get().server;

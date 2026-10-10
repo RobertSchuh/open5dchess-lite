@@ -20,8 +20,7 @@ import ViewMenu from 'components/Player/ViewMenu';
 import EmitterContext from 'utils/EmitterContext';
 import * as crConfig from 'state/config';
 
-const deepequal = require('fast-deep-equal');
-
+import deepequal from 'fast-deep-equal';
 /*
 Basic Props:
  - board

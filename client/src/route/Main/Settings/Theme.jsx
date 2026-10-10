@@ -34,10 +34,9 @@ import ViewMenu from 'components/Player/ViewMenu';
 import EmitterContext from 'utils/EmitterContext';
 import * as muiTheme from 'state/theme';
 
-const deepmerge = require('deepmerge');
-const deepequal = require('fast-deep-equal');
-const store = require('store');
-
+import deepmerge from 'deepmerge';
+import deepequal from 'fast-deep-equal';
+import store from 'store';
 const defaultTestNotation = `1. b3 / g5
 2. h4 / Bg7
 3. a3 / e5

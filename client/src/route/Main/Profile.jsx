@@ -24,7 +24,6 @@ import Typography from '@material-ui/core/Typography';
 import Flags from 'country-flag-icons/react/3x2';
 import { CountryRegionData } from 'react-country-region-selector';
 import { FilePond } from 'react-filepond';
-import Jimp from 'jimp';
 
 import UserAvatar from 'components/UserAvatar';
 
@@ -34,9 +33,9 @@ import * as users from 'network/users';
 
 import 'filepond/dist/filepond.min.css';
 
-const countries = require('i18n-iso-countries');
-countries.registerLocale(require('i18n-iso-countries/langs/en.json'));
-
+import countries from 'i18n-iso-countries';
+import countriesEn from 'i18n-iso-countries/langs/en.json';
+countries.registerLocale(countriesEn);
 class Profile extends React.Component {
   static contextType = EmitterContext;
   state = {
@@ -148,6 +147,7 @@ class Profile extends React.Component {
                       allowProcess={false}
                       onaddfile={async (error, file) => {
                         if(!error) {
+                          const { default: Jimp } = await import('jimp'); // lazy: Node-heavy, only for avatar upload
                           let image = await Jimp.read(await (file.file.arrayBuffer()));
                           image.cover(128, 128, Jimp.HORIZONTAL_ALIGN_CENTER | Jimp.VERTICAL_ALIGN_MIDDLE);
                           image.rgba(false);

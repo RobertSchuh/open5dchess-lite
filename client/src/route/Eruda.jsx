@@ -3,8 +3,9 @@ import React from 'react';
 import EmitterContext from 'utils/EmitterContext';
 import * as settings from 'state/settings';
 
-const eruda = require('eruda');
-
+import erudaModule from 'eruda';
+// CommonJS package: Vite 8 hands back { default } here, so unwrap it.
+const eruda = erudaModule.default ?? erudaModule;
 export default class ConverseManager extends React.Component {
   static contextType = EmitterContext;
   isInitialized = false;

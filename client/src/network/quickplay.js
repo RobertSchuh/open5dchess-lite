@@ -1,8 +1,7 @@
 import * as authStore from 'state/auth';
 import * as settings from 'state/settings';
 
-const axios = require('axios');
-
+import axios from 'axios';
 export const startQueue = async (ranked, variants, formats, minRating = null, maxRating = null) => {
   let storedAuth = authStore.get();
   let serverUrl = settings.get().server;

@@ -1,5 +1,4 @@
-const CodeMirror = require('codemirror');
-
+import CodeMirror from 'codemirror';
 CodeMirror.defineSimpleMode('notation', {
   start: [
     {

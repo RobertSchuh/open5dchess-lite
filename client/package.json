@@ -13,116 +13,14 @@
   "version": "1.0.6",
   "description": "Chess across time and space! Open source implementation of '5D Chess With Multiverse Time Travel'. Play the game of Chess In 5D here!",
   "private": true,
-  "main": "public/electron.js",
-  "homepage": "./",
-  "build": {
-    "appId": "com.electron.chess-in-5d",
-    "productName": "Chess In 5D",
-    "remoteBuild": false,
-    "fileAssociations": [
-      {
-        "ext": "5dpgn",
-        "name": "5D PGN File",
-        "description": "5D Portable Game Notation File"
-      }
-    ],
-    "files": [
-      "build/**/*",
-      "node_modules/**/*"
-    ],
-    "directories": {
-      "buildResources": "assets"
-    },
-    "win": {
-      "icon": "public/android-chrome-512x512.png",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64",
-            "ia32"
-          ]
-        }
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    },
-    "linux": {
-      "icon": "public/android-chrome-512x512.png",
-      "target": [
-        {
-          "target": "deb",
-          "arch": [
-            "x64",
-            "ia32",
-            "armv7l",
-            "arm64"
-          ]
-        },
-        {
-          "target": "pacman",
-          "arch": [
-            "x64",
-            "ia32"
-          ]
-        },
-        {
-          "target": "tar.gz",
-          "arch": [
-            "x64",
-            "ia32",
-            "armv7l",
-            "arm64"
-          ]
-        }
-      ],
-      "category": "Game"
-    },
-    "copyright": "Created by Shaun Wu (https://gitlab.com/alexbay218), source code released under AGPL-v3.0. All other assets are released under CC BY-SA 4.0"
-  },
-  "proxy": "http://localhost:5000",
   "scripts": {
-    "analyze": "npm run build && source-map-explorer 'build/static/js/*.js'",
-    "start": "craco start",
-    "electron-start": "concurrently \"npm start\" \"wait-on http://localhost:3000 && electron .\"",
-    "build": "cross-env NODE_OPTIONS=\"--max_old_space_size=4096\" craco build",
-    "preelectron-build": "npm run build --em.main=build/electron.js",
-    "electron-build": "electron-builder install-app-deps && electron-builder -wl -p always",
-    "preelectron-build-test": "npm run build --em.main=build/electron.js",
-    "electron-build-test": "electron-builder install-app-deps && electron-builder -w -p always",
+    "dev": "vite",
+    "build": "npm run lingui-compile && vite build",
+    "preview": "vite preview",
     "lingui-extract": "lingui extract",
     "lingui-compile": "lingui compile",
-    "test": "craco test --passWithNoTests",
-    "eject": "react-scripts eject",
-    "storybook": "start-storybook -p 6006 -s public",
-    "storybook-build": "build-storybook -s public"
-  },
-  "eslintConfig": {
-    "extends": "react-app",
-    "overrides": [
-      {
-        "files": [
-          "**/*.stories.*"
-        ],
-        "rules": {
-          "import/no-anonymous-default-export": "off"
-        }
-      }
-    ]
-  },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
+    "predev": "npm run lingui-compile",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@fontsource/domine": "^4.3.0",
@@ -141,23 +39,18 @@
     "@material-ui/core": "^4.11.0",
     "@material-ui/icons": "^4.11.2",
     "@material-ui/lab": "^4.0.0-alpha.57",
-    "@testing-library/jest-dom": "^4.2.4",
-    "@testing-library/react": "^9.5.0",
-    "@testing-library/user-event": "^7.2.1",
     "5d-chess-clock": "^1.0.1",
     "5d-chess-js": "^1.2.1",
     "5d-chess-renderer": "^1.1.16",
     "axios": "^0.21.0",
     "browser-info": "^1.3.0",
+    "buffer": "^6.0.3",
     "codemirror": "^5.58.3",
     "compare-versions": "^4.1.3",
-    "converse.js": "^7.0.6",
     "copy-to-clipboard": "^3.3.1",
     "country-flag-icons": "^1.2.8",
     "deepcopy": "^2.1.0",
     "deepmerge": "^4.2.2",
-    "electron-is-dev": "^1.2.0",
-    "electron-updater": "^4.3.5",
     "eruda": "^2.4.1",
     "fast-deep-equal": "^3.1.3",
     "filepond": "^4.20.1",
@@ -172,6 +65,7 @@
     "nanoevents": "^5.1.13",
     "nedb-promises": "^4.1.2",
     "notistack": "^1.0.0",
+    "path-browserify": "^1.0.1",
     "pixi.js": "^5.3.3",
     "react": "^16.13.1",
     "react-codemirror2": "^7.2.1",
@@ -188,30 +82,21 @@
     "react-redux": "^7.2.1",
     "react-router": "^5.2.0",
     "react-router-dom": "^5.2.0",
-    "react-scripts": "^4.0.3",
     "store": "^2.0.12",
     "throttle-debounce": "^3.0.1",
-    "url-safe-base64": "^1.2.0"
+    "url-safe-base64": "^1.2.0",
+    "util": "^0.12.5"
   },
   "devDependencies": {
-    "@craco/craco": "^6.2.0",
     "@lingui/cli": "^3.10.2",
-    "@lingui/loader": "^3.10.2",
     "@lingui/macro": "^3.10.2",
-    "@storybook/addon-actions": "^6.2.9",
-    "@storybook/addon-essentials": "^6.2.9",
-    "@storybook/addon-links": "^6.2.9",
-    "@storybook/node-logger": "^6.2.9",
-    "@storybook/preset-create-react-app": "^3.1.7",
-    "@storybook/react": "^6.2.9",
-    "concurrently": "^5.3.0",
-    "craco-workbox": "^0.2.0",
-    "cross-env": "^7.0.3",
-    "electron": "^10.1.2",
-    "electron-builder": "^23.0.3",
-    "nodemon": "^2.0.4",
-    "source-map-explorer": "^2.5.0",
-    "wait-on": "^5.3.0",
-    "workerize-loader": "^1.3.0"
+    "@vitejs/plugin-react": "^5.2.0",
+    "babel-plugin-macros": "^3.1.0",
+    "patch-package": "^8.0.1",
+    "vite": "^8.3.4"
+  },
+  "type": "module",
+  "overrides": {
+    "pixi-stats": "1.0.7"
   }
 }

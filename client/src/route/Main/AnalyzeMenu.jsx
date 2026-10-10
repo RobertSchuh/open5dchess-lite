@@ -25,9 +25,8 @@ import {Controlled as CodeMirror} from 'react-codemirror2';
 
 import 'codemirror/lib/codemirror.css';
 import 'codemirror/theme/mdn-like.css';
-require('codemirror/addon/mode/simple');
-require('components/CodeMirror/NotationMode');
-
+import 'codemirror/addon/mode/simple';
+import 'components/CodeMirror/NotationMode';
 /*
 Props
  - open

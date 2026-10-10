@@ -1,6 +1,5 @@
-const deepmerge = require('deepmerge');
-const store = require('store');
-
+import deepmerge from 'deepmerge';
+import store from 'store';
 const defaultPalette = {
   background: {
     single: 0xE2E5F7,

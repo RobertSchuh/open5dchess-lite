@@ -1,5 +1,4 @@
-const Datastore = require('nedb-promises');
-
+import Datastore from 'nedb-promises';
 var collections = null;
 
 export const init = () => {

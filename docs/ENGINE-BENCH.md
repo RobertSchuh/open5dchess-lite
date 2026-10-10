@@ -86,3 +86,93 @@ that nothing times out, so both engines do the same complete work.
 | mateAcrossTime, before final action | 0/96 | 25.4 | 0/96 | 2.97 |
 | checkOnL2, before final action | 1/200 | 960 | 0/200 | 297 |
 | claudeVsRob, before final action | 0/53 | 6.26 | 0/53 | 0.84 |
+
+
+# v3 engine benchmark (2026-10-10, Node v24.21.0, linux)
+
+All times in ms. classify = classifyMoves (legal move hints), mate = hasLegalAction.
+Budgets large enough that nothing times out: both engines do the same complete work.
+v2 = shared/legalMoves.js (fast JS engine); v3 = shared/legalMovesV3.js (Rust->WASM).
+
+## Game: mateAcrossTime (turn_zero)
+| position | timelines | moves | classify v2 | classify v3 | speedup | mate v2 | mate v3 | speedup |
+|---|---|---|---|---|---|---|---|---|
+| after action 0 | 1 | 20 | 3.99 | 2.81 | 1.4x | 0.59 | 0.17 | 3.5x |
+| after action 1 | 1 | 22 | 1.78 | 0.22 | 8.2x | 0.26 | 0.03 | 8.2x |
+| after action 2 | 1 | 32 | 1.91 | 0.18 | 10.8x | 0.18 | 0.03 | 5.9x |
+| after action 3 | 1 | 32 | 1.63 | 0.16 | 10.4x | 0.23 | 0.04 | 5.6x |
+| after action 4 | 1 | 51 | 1.46 | 0.24 | 6.2x | 0.11 | 0.04 | 2.8x |
+| after action 5 | 1 | 43 | 1.97 | 0.29 | 6.8x | 0.25 | 0.06 | 3.9x |
+| after action 6 | 1 | 56 | 3.56 | 0.26 | 13.7x | 0.13 | 0.04 | 3.2x |
+| after action 7 | 1 | 46 | 3.20 | 0.25 | 12.8x | 0.14 | 0.04 | 3.2x |
+| after action 8 | 1 | 66 | 1.28 | 0.23 | 5.5x | 0.10 | 0.09 | 1.2x |
+| after action 9 | 1 | 35 | 0.82 | 0.11 | 7.4x | 0.09 | 0.03 | 3.4x |
+| after action 10 | 1 | 69 | 1.18 | 0.22 | 5.3x | 0.11 | 0.03 | 3.7x |
+| after action 11 | 1 | 35 | 1.90 | 0.27 | 7.0x | 1.00 | 0.09 | 11.0x |
+| after action 12 | 1 | 58 | 1.23 | 0.27 | 4.6x | 0.17 | 0.04 | 3.9x |
+| after action 13 | 2 | 100 | 86.4 | 7.78 | 11.1x | 24.5 | 3.03 | 8.1x |
+| after action 14 | 3 | 96 | 3.26 | 0.59 | 5.5x | 0.11 | 0.06 | 2.0x |
+| after action 15 | 3 | 133 | 20.6 | 2.68 | 7.7x | 20.9 | 3.03 | 6.9x |
+| **total** | | 894 | **136** | **16.6** | **8.2x** | **48.8** | **6.85** | **7.1x** |
+
+## Game: checkOnL2 (standard)
+| position | timelines | moves | classify v2 | classify v3 | speedup | mate v2 | mate v3 | speedup |
+|---|---|---|---|---|---|---|---|---|
+| after action 0 | 1 | 20 | 0.26 | 0.06 | 4.1x | 0.04 | 0.02 | 2.4x |
+| after action 1 | 1 | 20 | 0.15 | 0.04 | 3.4x | 0.03 | 0.02 | 2.0x |
+| after action 2 | 1 | 32 | 0.28 | 0.07 | 4.0x | 0.03 | 0.02 | 1.8x |
+| after action 3 | 1 | 32 | 0.50 | 0.08 | 6.5x | 0.08 | 0.02 | 3.4x |
+| after action 4 | 1 | 51 | 1.76 | 0.13 | 13.5x | 0.09 | 0.03 | 3.1x |
+| after action 5 | 1 | 42 | 1.06 | 0.13 | 8.3x | 0.10 | 0.03 | 3.1x |
+| after action 6 | 1 | 56 | 1.54 | 0.17 | 9.1x | 0.07 | 0.03 | 2.4x |
+| after action 7 | 1 | 45 | 0.41 | 0.12 | 3.3x | 0.05 | 0.03 | 1.5x |
+| after action 8 | 1 | 65 | 1.30 | 0.18 | 7.3x | 0.18 | 0.05 | 3.6x |
+| after action 9 | 1 | 48 | 1.21 | 0.14 | 8.8x | 0.08 | 0.04 | 2.0x |
+| after action 10 | 1 | 65 | 1.50 | 0.18 | 8.5x | 0.08 | 0.06 | 1.5x |
+| after action 11 | 1 | 41 | 0.38 | 0.12 | 3.1x | 0.27 | 0.07 | 4.1x |
+| after action 12 | 1 | 62 | 0.67 | 0.16 | 4.3x | 0.04 | 0.02 | 1.8x |
+| after action 13 | 2 | 107 | 65.6 | 8.44 | 7.8x | 34.4 | 3.72 | 9.3x |
+| after action 14 | 3 | 99 | 3.75 | 0.61 | 6.1x | 0.13 | 0.03 | 4.0x |
+| after action 15 | 3 | 131 | 145 | 15.1 | 9.6x | 20.7 | 2.41 | 8.6x |
+| after action 16 | 4 | 200 | 348 | 33.0 | 10.5x | 0.62 | 0.13 | 4.7x |
+| after action 17 | 4 | 86 | 95.1 | 10.5 | 9.1x | 80.0 | 10.9 | 7.4x |
+| **total** | | 1202 | **669** | **69.2** | **9.7x** | **137** | **17.6** | **7.8x** |
+
+## Game: claudeVsRob (standard)
+| position | timelines | moves | classify v2 | classify v3 | speedup | mate v2 | mate v3 | speedup |
+|---|---|---|---|---|---|---|---|---|
+| after action 0 | 1 | 20 | 0.25 | 0.04 | 5.7x | 0.05 | 0.02 | 2.8x |
+| after action 1 | 1 | 20 | 0.16 | 0.06 | 2.8x | 0.04 | 0.01 | 3.1x |
+| after action 2 | 1 | 32 | 0.29 | 0.08 | 3.6x | 0.03 | 0.01 | 2.4x |
+| after action 3 | 1 | 32 | 0.29 | 0.07 | 3.9x | 0.03 | 0.01 | 2.3x |
+| after action 4 | 1 | 51 | 0.55 | 0.12 | 4.7x | 0.03 | 0.02 | 2.2x |
+| after action 5 | 1 | 38 | 0.40 | 0.11 | 3.7x | 0.05 | 0.02 | 2.7x |
+| after action 6 | 1 | 60 | 0.66 | 0.13 | 5.1x | 0.05 | 0.02 | 2.7x |
+| after action 7 | 1 | 46 | 0.52 | 0.12 | 4.4x | 0.04 | 0.03 | 1.5x |
+| after action 8 | 1 | 54 | 0.57 | 0.15 | 3.8x | 0.03 | 0.02 | 2.0x |
+| after action 9 | 1 | 51 | 0.52 | 0.12 | 4.3x | 0.04 | 0.02 | 2.1x |
+| after action 10 | 1 | 54 | 1.16 | 0.15 | 7.6x | 0.03 | 0.02 | 1.8x |
+| after action 11 | 1 | 48 | 0.48 | 0.14 | 3.4x | 0.03 | 0.02 | 1.7x |
+| after action 12 | 1 | 49 | 0.54 | 0.13 | 4.2x | 0.07 | 0.03 | 2.5x |
+| after action 13 | 1 | 55 | 0.46 | 0.12 | 3.8x | 0.02 | 0.02 | 1.3x |
+| after action 14 | 1 | 54 | 0.56 | 0.12 | 4.5x | 0.07 | 0.03 | 2.5x |
+| after action 15 | 1 | 48 | 0.39 | 0.11 | 3.6x | 0.02 | 0.02 | 1.3x |
+| after action 16 | 1 | 53 | 0.54 | 0.12 | 4.4x | 0.03 | 0.03 | 1.1x |
+| after action 17 | 2 | 107 | 75.9 | 8.34 | 9.1x | 75.3 | 8.50 | 8.9x |
+| **total** | | 872 | **84.2** | **10.2** | **8.2x** | **76.0** | **8.83** | **8.6x** |
+
+## Generated multi-timeline positions
+| position | timelines | moves | classify v2 | classify v3 | speedup | mate v2 | mate v3 | speedup |
+|---|---|---|---|---|---|---|---|---|
+| random seed-game 0, final | 6 | 141 | 265 | 22.9 | 11.6x | 0.40 | 0.10 | 3.9x |
+| random seed-game 1, final | 6 | 138 | 29.4 | 4.60 | 6.4x | 0.32 | 0.08 | 4.2x |
+| random seed-game 2, final | 6 | 159 | 65.5 | 8.54 | 7.7x | 0.65 | 0.12 | 5.5x |
+| random seed-game 3, final | 5 | 118 | 26.5 | 4.01 | 6.6x | 0.32 | 0.08 | 4.0x |
+| **total** | | 556 | **386** | **40.1** | **9.6x** | **1.69** | **0.38** | **4.5x** |
+
+## Production budgets (classify 4000/500 ms): decisiveness
+| position | v2 unknown | v2 ms | v3 unknown | v3 ms |
+|---|---|---|---|---|
+| mateAcrossTime, before final action | 0/96 | 4.00 | 0/96 | 0.66 |
+| checkOnL2, before final action | 0/200 | 370 | 0/200 | 33.2 |
+| claudeVsRob, before final action | 0/53 | 0.71 | 0/53 | 0.14 |

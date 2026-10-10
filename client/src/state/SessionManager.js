@@ -275,6 +275,12 @@ export default class SessionManager {
     }
   }
   async endSession() {
+    //Stop the clock when the game ends (mate/stalemate end it while running)
+    if(!this.isServer && this.session.timed !== null) {
+      this.chessClock.stop();
+      this.session.timed = this.chessClock.state();
+      this.emitter.emit('onClockUpdate', this.getClock(), this.session);
+    }
     if(this.session._id) {
       delete this.session._id;
     }

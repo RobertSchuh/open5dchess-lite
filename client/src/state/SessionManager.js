@@ -181,7 +181,19 @@ export default class SessionManager {
           this.session.endDate = Date.now();
           this.endSession();
         }
-        else if(this.chess.inStalemate) {
+      }
+      else if(this.isServer && this.session.ended) {
+        this.endSession();
+      }
+    }
+    //Mate/stalemate detection. Upstream only ran this while the clock was
+    //stopped, so timed games never ended in checkmate. The search is slow and
+    //synchronous, so only run it once per submitted action.
+    if(!this.isServer && !this.session.ended) {
+      let actionCount = this.chess.actionHistory.length;
+      if(actionCount !== this.lastDetectionActionCount) {
+        this.lastDetectionActionCount = actionCount;
+        if(this.chess.inStalemate) {
           await this.setSession();
           this.session.winner = 'draw';
           this.session.winCause = 'regular';
@@ -197,9 +209,6 @@ export default class SessionManager {
           this.session.endDate = Date.now();
           this.endSession();
         }
-      }
-      else if(this.isServer && this.session.ended) {
-        this.endSession();
       }
     }
     this.emitter.emit('onSessionUpdate', this.session);

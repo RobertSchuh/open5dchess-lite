@@ -44,6 +44,10 @@ HOW TO PLAY OVER HTTP (seat token included in every URL)
 - Wait for your turn:         GET  ${api}/wait?${q}&timeout=45000   (returns when it's your turn or after 45 s; also accepts &since=)
 - Check a move first:         POST ${api}/preview?${q}   body {"moves": ["e4"]}   -> what the opponent could do after it
 - Play and submit:            POST ${api}/moves?${q}     body {"moves": ["e4"], "submit": true}
+  Can you only fetch URLs (no POST)? Use GET instead:
+                              GET  ${api}/moves?${q}&moves=e4
+  Several moves in one turn: separate with commas, e.g. &moves=(0T5)Nf3,(1T5)e5
+  (URL-encode if your tool requires it; add &submit=false to stage without submitting.)
 - Resign:                     POST ${api}/resign?${q}
 A rejected move returns an error and the list of legal moves; nothing is played.
 

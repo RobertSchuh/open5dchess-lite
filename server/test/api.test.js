@@ -62,6 +62,27 @@ test('moves in one request are all-or-nothing, with legal moves on error', async
   assert.equal(ok.body.toMove, 'black');
 });
 
+test('GET fallback plays moves for fetch-only agents', async () => {
+  const { id, W, B } = await newGame();
+  // no moves param -> explanatory 400, nothing happens
+  const empty = await call('GET', `/api/games/${id}/moves?seat=${W}`);
+  assert.equal(empty.status, 400);
+  assert.match(empty.body.error, /moves=/);
+  // play and submit via GET
+  const ok = await call('GET', `/api/games/${id}/moves?seat=${W}&moves=e4`);
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.toMove, 'black');
+  // stage without submitting
+  const staged = await call('GET', `/api/games/${id}/moves?seat=${B}&moves=e5&submit=false`);
+  assert.equal(staged.status, 200);
+  assert.deepEqual(staged.body.staged.length, 1);
+  assert.equal(staged.body.toMove, 'black'); // not submitted yet
+  // illegal move via GET: rolled back, legal moves included
+  const bad = await call('GET', `/api/games/${id}/moves?seat=${B}&moves=Ke4`);
+  assert.equal(bad.status, 400);
+  assert.ok(Array.isArray(bad.body.legalMoves));
+});
+
 test('spectators cannot move', async () => {
   const { id, S } = await newGame();
   const res = await call('POST', `/api/games/${id}/moves?seat=${S}`, { moves: ['e4'] });

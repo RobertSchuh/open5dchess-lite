@@ -166,11 +166,9 @@ export const createApp = ({
       return sendJson(res, 200, await game.singleBoard(seat, url.searchParams.get('l'), url.searchParams.get('t')));
     }
 
-    // Body: { moves: ["e4"], submit: true }. All moves of one request are
-    // applied together; on any error they are rolled back.
-    if(action === 'moves' && req.method === 'POST') {
-      const body = await readJson(req);
-      const moves = Array.isArray(body.moves) ? body.moves : (typeof body.moves === 'string' ? [body.moves] : []);
+    // All moves of one request are applied together; on any error they are
+    // rolled back and the response carries the legal moves.
+    const applyMoves = async (moves, submit) => {
       if(moves.length > 64 || moves.some((m) => typeof m !== 'string' || m.length > 200)) {
         throw new GameError(400, 'moves must be an array of 5DPGN move strings');
       }
@@ -180,7 +178,7 @@ export const createApp = ({
           game.move(seat, m.trim());
           applied++;
         }
-        if(body.submit !== false) { game.submit(seat); }
+        if(submit) { game.submit(seat); }
       }
       catch(err) {
         for(let i = 0;i < applied;i++) {
@@ -192,6 +190,25 @@ export const createApp = ({
         throw err;
       }
       return sendJson(res, 200, await game.textState(seat, { since: sinceParam(url) }));
+    };
+
+    // Body: { moves: ["e4"], submit: true }
+    if(action === 'moves' && req.method === 'POST') {
+      const body = await readJson(req);
+      const moves = Array.isArray(body.moves) ? body.moves : (typeof body.moves === 'string' ? [body.moves] : []);
+      return applyMoves(moves, body.submit !== false);
+    }
+
+    // GET fallback for agents whose tooling can only fetch URLs (some AI
+    // assistants): /moves?seat=&moves=e4  or  moves=(0T5)Nf3,(1T5)e5
+    // 5DPGN never contains commas, so a comma list is unambiguous. The URL
+    // already carries the secret seat token, so GET leaks nothing new, and
+    // requiring an explicit moves= parameter keeps prefetchers harmless.
+    if(action === 'moves' && req.method === 'GET') {
+      const raw = url.searchParams.get('moves');
+      if(!raw) { throw new GameError(400, 'Pass ?moves=<5DPGN>[,<5DPGN>...] (and optionally &submit=false)'); }
+      const moves = raw.split(',').map((m) => m.trim()).filter(Boolean);
+      return applyMoves(moves, url.searchParams.get('submit') !== 'false');
     }
 
     // Everything an LLM agent needs in one plain-text page: rules, state, how to move

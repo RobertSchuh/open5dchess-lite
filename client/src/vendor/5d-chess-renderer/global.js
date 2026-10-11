@@ -163,6 +163,7 @@ class Global {
     //preventDefault() on two-finger moves also stops browser page zoom on
     //browsers that ignore the viewport meta (iOS Safari).
     let pinchDist = null;
+    let dragPaused = false;
     const touchInfo = (e) => {
       const rect = this.app.view.getBoundingClientRect();
       const [a, b] = [e.touches[0], e.touches[1]];
@@ -170,6 +171,20 @@ class Global {
         dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
         mid: { x: (a.clientX + b.clientX) / 2 - rect.left, y: (a.clientY + b.clientY) / 2 - rect.top },
       };
+    };
+    //While the fallback pinch drives the zoom, the browser may still feed ONE
+    //of the fingers to PIXI (that is the Firefox failure mode), making the
+    //drag plugin fight the pinch and its inertia fling the board on release.
+    //So: pause drag during the fallback pinch, and clear any stored fling
+    //velocity when the fingers lift.
+    const endPinch = (e) => {
+      pinchDist = null;
+      if(dragPaused && e.touches.length === 0) {
+        this.viewport.plugins.resume('drag');
+        dragPaused = false;
+      }
+      const decelerate = this.viewport.plugins.get('decelerate');
+      if(decelerate) { decelerate.reset(); }
     };
     this.app.view.addEventListener('touchstart', (e) => {
       pinchDist = e.touches.length === 2 ? touchInfo(e).dist : null;
@@ -181,6 +196,10 @@ class Global {
       const { dist, mid } = touchInfo(e);
       if(pinchDist === null) { pinchDist = dist; return; }
       if(pinchDist <= 0 || dist <= 0) { return; }
+      if(!dragPaused) {
+        this.viewport.plugins.pause('drag');
+        dragPaused = true;
+      }
       const before = this.viewport.toWorld(mid.x, mid.y);
       this.viewport.scale.x *= dist / pinchDist;
       this.viewport.scale.y = this.viewport.scale.x;
@@ -195,7 +214,8 @@ class Global {
       this.viewport.emit('moved', { viewport: this.viewport, type: 'pinch' });
       this.viewport.dirty = true;
     }, { passive: false });
-    this.app.view.addEventListener('touchend', () => { pinchDist = null; }, { passive: true });
+    this.app.view.addEventListener('touchend', endPinch, { passive: true });
+    this.app.view.addEventListener('touchcancel', endPinch, { passive: true });
 
     //Emit element update
     this.emitter.emit('elementUpdate');

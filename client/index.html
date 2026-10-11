@@ -9,7 +9,9 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
     <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#707cb8">
     <meta name="msapplication-TileColor" content="#707cb8">
-    <meta name="viewport" content="width=device-width, minimum-scale=1, initial-scale=1" />
+    <!-- No browser pinch-zoom: the board has its own pinch/pan (pixi-viewport),
+     and page zoom fights it whenever a finger lands on a UI overlay. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#424242" />
     <meta
       name="description"

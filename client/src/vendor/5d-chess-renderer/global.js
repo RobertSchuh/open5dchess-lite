@@ -59,6 +59,10 @@ class Global {
     this.viewport = new Viewport({
       passiveWheel: false,
       disableOnContextMenu: true,
+      //Map touch/pointer positions through PIXI's interaction manager instead
+      //of raw clientX/Y; without this, multi-touch pinch uses wrong
+      //coordinates whenever the canvas is offset or scaled.
+      interaction: this.app.renderer.plugins.interaction,
     });
     this.viewport.options.disableOnContextMenu = true;
     this.app.stage.addChild(this.viewport);

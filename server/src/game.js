@@ -55,8 +55,8 @@ export class Game {
     this.result = null; // { winner: 'white'|'black'|'draw', reason }
     this.version = 0;   // bumped on every change; used by long-polling
     this.seats = {
-      white: { token: newToken(), nickname: null, connections: 0 },
-      black: { token: newToken(), nickname: null, connections: 0 },
+      white: { token: newToken(), nickname: null, connections: 0, lastSeen: 0 },
+      black: { token: newToken(), nickname: null, connections: 0, lastSeen: 0 },
     };
     this.spectateToken = newToken();
     this.listeners = new Set();
@@ -98,7 +98,15 @@ export class Game {
     if(tokenEquals(token, this.seats.white.token)) { res = 'white'; }
     if(tokenEquals(token, this.seats.black.token)) { res = 'black'; }
     if(tokenEquals(token, this.spectateToken)) { res = res || 'spectator'; }
+    // Any authenticated use of a seat counts as presence, so players on the
+    // HTTP text API (LLMs via MCP) don't show as "not connected" all game.
+    if(res === 'white' || res === 'black') { this.seats[res].lastSeen = Date.now(); }
     return res;
+  }
+
+  seatPresent(color) {
+    const s = this.seats[color];
+    return s.connections > 0 || Date.now() - s.lastSeen < 120000;
   }
 
   get ended() { return this.result !== null; }
@@ -269,8 +277,8 @@ export class Game {
       clock: this.clock ? Object.assign(this.clock.state(), { serverTime: this.now() }) : null,
       result: this.result,
       players: {
-        white: { nickname: this.seats.white.nickname, connected: this.seats.white.connections > 0 },
-        black: { nickname: this.seats.black.nickname, connected: this.seats.black.connections > 0 },
+        white: { nickname: this.seats.white.nickname, connected: this.seatPresent('white') },
+        black: { nickname: this.seats.black.nickname, connected: this.seatPresent('black') },
       },
     };
   }

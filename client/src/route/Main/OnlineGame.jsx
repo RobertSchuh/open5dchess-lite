@@ -41,6 +41,7 @@ class OnlineGame extends React.Component {
     board: null,
     inviteOpen: false,
     resignOpen: false,
+    barExpanded: null, //null = automatic (expanded until the game is underway)
   };
   componentDidMount() {
     const gameId = this.props.match.params.id;
@@ -120,9 +121,32 @@ class OnlineGame extends React.Component {
     else {
       text = game.players[opponent].connected ? "Opponent's move" : "Opponent's move (not connected)";
     }
+    //The game counts as underway once anything has been played or the
+    //opponent has shown up; from then on the bar folds into a small pill
+    //so it stops covering the board (tap to expand).
+    const underway = game.actionHistory.length > 0 || game.players[opponent].connected;
+    const expanded = this.state.barExpanded !== null ? this.state.barExpanded
+      : (!underway || game.result !== null);
+    //Below the app bar AND the Player view toolbar, so it never covers buttons
+    const barStyle = { position: 'fixed', top: 132, left: '50%', transform: 'translateX(-50%)', zIndex: 1200, maxWidth: 'calc(100vw - 16px)' };
+    const dot = (
+      <span style={{
+        display: 'inline-block', width: 10, height: 10, borderRadius: 5, flexShrink: 0,
+        backgroundColor: this.state.connected ? '#2e7d32' : '#b26a00',
+      }} />
+    );
+    if(!expanded) {
+      return (
+        <Paper elevation={4} style={barStyle} onClick={() => this.setState({ barExpanded: true })}>
+          <Box px={1} py={0.25} display='flex' alignItems='center' style={{ gap: 6, cursor: 'pointer', opacity: 0.85 }}>
+            {dot}
+            <Typography variant='caption' style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{text}</Typography>
+          </Box>
+        </Paper>
+      );
+    }
     return (
-      //Floats above the board (the Player layout covers the whole page)
-      <Paper elevation={4} style={{ position: 'fixed', top: 72, left: '50%', transform: 'translateX(-50%)', zIndex: 1200, maxWidth: 'calc(100vw - 16px)' }}>
+      <Paper elevation={4} style={barStyle}>
         <Box px={1} py={0.5} display='flex' alignItems='center' flexWrap='wrap' style={{ gap: 8 }}>
           <Chip
             size='small'
@@ -139,6 +163,11 @@ class OnlineGame extends React.Component {
           {isPlayer && !game.result ?
             <Button size='small' color='secondary' variant='outlined' onClick={() => this.setState({ resignOpen: true })}>
               <Trans>Resign</Trans>
+            </Button>
+          : null}
+          {underway && game.result === null ?
+            <Button size='small' onClick={() => this.setState({ barExpanded: false })}>
+              <Trans>Hide</Trans>
             </Button>
           : null}
         </Box>

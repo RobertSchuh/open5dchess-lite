@@ -40,12 +40,20 @@ pub fn profile_has_legal(buf: &[i32], budget_ms: f64) {
     let h = pos_hash(&p, &mut arena);
     let t0 = std::time::Instant::now();
     let r = can_complete(&mut p, &mut arena, &mut ctx, 0, h);
+    use std::sync::atomic::Ordering::Relaxed;
+    let ms = |v: &std::sync::atomic::AtomicU64| v.load(Relaxed) as f64 / 1e6;
     println!(
-        "has_legal = {} ({}) in {:.1}s | arena boards {}",
+        "has_legal = {} ({}) in {:.1}s | arena boards {} | nodes {} edges {} | present {:.1}ms checks {:.1}ms gen {:.1}ms step {:.1}ms",
         r as i32,
         ["YES", "NO", "TIMEOUT"][r as usize],
         t0.elapsed().as_secs_f64(),
-        arena.boards.len()
+        arena.boards.len(),
+        stats::NODES.load(Relaxed),
+        stats::EDGES.load(Relaxed),
+        ms(&stats::T_PRESENT),
+        ms(&stats::T_CHECKS),
+        ms(&stats::T_GEN),
+        ms(&stats::T_STEP),
     );
 }
 
@@ -1576,6 +1584,60 @@ struct CheckFacts {
     in_check: bool,
     dead: bool,
     hot: u128,
+    //First checks (attacker square, checked king square), for evasion-first
+    //move ordering. 4 is plenty: more checks only tighten the same ordering.
+    n_checks: u8,
+    checks: [(P4, P4); 4],
+}
+
+const P4_ZERO: P4 = P4 { l: 0, t: 0, r: 0, f: 0 };
+
+//Reconstruct the unit step vector of a rider ray from attacker square s to
+//king square e: (lm, tm, rm, fm, steps), tm in half-board units. None for
+//non-rider geometry (knight-type checks have no blockable path).
+fn ray_vec(p: &Pos, s: P4, e: P4) -> Option<(i32, i32, i32, i32, i32)> {
+    let (dt, dr, df) = (e.t - s.t, e.r - s.r, e.f - s.f);
+    let mut n = (dt.abs() / 2).max(dr.abs()).max(df.abs());
+    let (tm, rm, fm);
+    if n == 0 {
+        //pure-timeline ray: find the step count by walking the slot arithmetic
+        if s.l == e.l { return None; }
+        for lm in [1i32, -1] {
+            let mut cur = s.l;
+            for k in 1..=64 {
+                cur = timeline_move(cur, lm, p.is_even);
+                if cur == e.l { n = k; break; }
+                if cur < 0 || cur as usize >= p.tls.len() { break; }
+            }
+            if n != 0 { return Some((lm, 0, 0, 0, n)); }
+        }
+        return None;
+    }
+    tm = dt / n;
+    rm = dr / n;
+    fm = df / n;
+    if tm * n != dt || rm * n != dr || fm * n != df { return None; }
+    if !(tm == 0 || tm == 2 || tm == -2) || rm.abs() > 1 || fm.abs() > 1 { return None; }
+    //timeline component: find the reflective unit step that lands on e.l
+    'lm: for lm in [0i32, 1, -1] {
+        let mut cur = s.l;
+        for _ in 0..n {
+            cur = timeline_move(cur, lm, p.is_even);
+            if lm != 0 && (cur < 0 || cur as usize >= p.tls.len()) && cur != e.l { continue 'lm; }
+        }
+        if cur == e.l { return Some((lm, tm, rm, fm, n)); }
+    }
+    None
+}
+
+//Is x strictly between s and e on the straight/diagonal line s->e (one board)?
+#[inline]
+fn between_on_board(s: P4, e: P4, x: P4) -> bool {
+    let (dr, df) = (e.r - s.r, e.f - s.f);
+    let (xr, xf) = (x.r - s.r, x.f - s.f);
+    if dr * xf - df * xr != 0 { return false; }
+    let dot = xr * dr + xf * df;
+    dot > 0 && dot < dr * dr + df * df
 }
 
 struct Ctx {
@@ -1654,7 +1716,7 @@ macro_rules! count {
 
 //Memo caps: a multi-minute search otherwise grows these tables past the
 //wasm 4 GB address space (the tables are pure caches; clearing is safe).
-const CHECKS_MEMO_CAP: usize = 4_000_000;
+const CHECKS_MEMO_CAP: usize = 2_000_000;
 const SEEN_CAP: usize = 16_000_000;
 const MEMO_CAP: usize = 8_000_000;
 
@@ -1666,7 +1728,14 @@ fn check_facts(p: &mut Pos, arena: &mut Arena, ctx: &mut Ctx, depth: usize, h: u
     list.clear();
     timed!(T_CHECKS, checks(p, arena, false, &mut list, present));
     let info = check_info_from(p, &list);
-    let facts = CheckFacts { in_check: !list.is_empty(), dead: info.dead, hot: info.hot };
+    let mut facts = CheckFacts {
+        in_check: !list.is_empty(), dead: info.dead, hot: info.hot,
+        n_checks: 0, checks: [(P4_ZERO, P4_ZERO); 4],
+    };
+    for &pair in list.iter().take(4) {
+        facts.checks[facts.n_checks as usize] = pair;
+        facts.n_checks += 1;
+    }
     ctx.list_bufs[depth] = list;
     if ctx.checks_memo.len() >= CHECKS_MEMO_CAP { ctx.checks_memo.clear(); }
     ctx.checks_memo.insert(h, facts);
@@ -1697,6 +1766,68 @@ fn can_complete(p: &mut Pos, arena: &mut Arena, ctx: &mut Ctx, depth: usize, h: 
     let mut moves = std::mem::take(&mut ctx.move_bufs[depth]);
     moves.clear();
     timed!(T_GEN, gen_moves(p, arena, &mut moves));
+    //Past-king check pruning: a check on a king whose board is frozen (not
+    //the latest of its timeline) can only ever be answered by capturing the
+    //attacker, blocking on a square of the ray that lies on a still-growing
+    //board, or a move to another board (travels shift timeline activation).
+    //Same-action moves on distinct boards commute, so pruning the rest at
+    //this node loses no completion.
+    if facts.in_check && facts.n_checks > 0 {
+        //Filter against the first check; any completion must answer all of
+        //them, so one check's candidate superset is a valid restriction.
+        {
+            let (cs, ce) = facts.checks[0];
+            let mut blockables: [P4; 32] = [P4_ZERO; 32];
+            let mut nb = 0usize;
+            if let Some((lm, tm, rm, fm, n)) = ray_vec(p, cs, ce) {
+                let mut cur = cs;
+                for _ in 1..n {
+                    cur = P4 { l: timeline_move(cur.l, lm, p.is_even), t: cur.t + tm, r: cur.r + rm, f: cur.f + fm };
+                    if nb >= blockables.len() { break; }
+                    if cur.l < 0 || cur.l as usize >= p.tls.len() { continue; }
+                    let latest = match &p.tls[cur.l as usize] { Some(tl) => tl.len() as i32 - 1, None => -1 };
+                    //the board our own action creates sits one half-step later
+                    if latest >= 0 && (latest - cur.t).abs() <= 1 {
+                        blockables[nb] = P4 { l: cur.l, t: latest, r: cur.r, f: cur.f };
+                        nb += 1;
+                    }
+                }
+            }
+            //Branching travels stay: they shift the present backward and can
+            //activate older timelines, and checks are only scanned from
+            //present timelines, so a branch can void this check (that is the
+            //escape in mateAcrossTime). Non-branching jumps and unrelated
+            //spatial moves cannot touch it and are pruned.
+            moves.retain(|m| {
+                //branching travel: destination board is not the latest of its timeline
+                if (m.d.l != m.s.l || m.d.t != m.s.t)
+                    && m.d.t < match &p.tls[m.d.l as usize] { Some(tl) => tl.len() as i32 - 1, None => 0 } {
+                    return true;
+                }
+                let hits = |x: P4| -> bool {
+                    if x.l == cs.l && x.r == cs.r && x.f == cs.f && (x.t - cs.t).abs() <= 1 { return true; } //capture the checker (also once copied forward)
+                    for b in &blockables[..nb] {
+                        if x.l == b.l && x.r == b.r && x.f == b.f && (x.t - b.t).abs() <= 1 { return true; }
+                    }
+                    false
+                };
+                if hits(m.d) { return true; }
+                if let Extra::EnPassant(x) = m.extra {
+                    if x.l == cs.l && x.r == cs.r && x.f == cs.f { return true; }
+                }
+                if let Extra::Castle(_, rd) = m.extra {
+                    if hits(rd) { return true; }
+                }
+                //moving the checked king (it copies forward when its board
+                //is a latest board; frozen kings simply have no such moves)
+                if m.s.l == ce.l && m.s.r == ce.r && m.s.f == ce.f && (m.s.t - ce.t).abs() <= 1 { return true; }
+                //same-board interposition between a slider and the king
+                if cs.l == ce.l && cs.t == ce.t && m.d.l == cs.l && (m.d.t - cs.t).abs() <= 1
+                    && between_on_board(cs, ce, P4 { l: cs.l, t: cs.t, r: m.d.r, f: m.d.f }) { return true; }
+                false
+            });
+        }
+    }
     {
         //Ordering only (results of a completed search don't depend on move
         //order): moves on boards involved in a check first, then moves on
@@ -1708,17 +1839,30 @@ fn can_complete(p: &mut Pos, arena: &mut Arena, ctx: &mut Ctx, depth: usize, h: 
         }
         let hot = facts.hot;
         let rank = |m: &Mv| -> u8 {
+            if facts.in_check {
+                //Evasion first: only moves that touch a check can be the move
+                //that resolves it (capture the checker, move the checked
+                //king, block between a slider and the king), and travels can
+                //shift the present. Everything else almost never helps.
+                for i in 0..facts.n_checks as usize {
+                    let (cs, ce) = facts.checks[i];
+                    if m.d == cs || m.s == ce { return 0; }
+                    if cs.l == ce.l && cs.t == ce.t && m.d.l == cs.l && m.d.t == cs.t
+                        && between_on_board(cs, ce, m.d) { return 0; }
+                }
+                if m.d.l != m.s.l || m.d.t != m.s.t { return 1; }
+            }
             if hot != 0 && ((hot >> (m.s.l as u32 & 127)) & 1 == 1 || (hot >> (m.d.l as u32 & 127)) & 1 == 1) {
-                return 0;
+                return 2;
             }
             if (present_mask >> (m.s.l as u32 & 127)) & 1 == 1 {
-                return 1;
+                return 3;
             }
-            2
+            4
         };
         let mut ordered = std::mem::take(&mut ctx.order_bufs[depth]);
         ordered.clear();
-        for want in 0..3u8 {
+        for want in 0..5u8 {
             for m in moves.iter() {
                 if rank(m) == want {
                     ordered.push(*m);

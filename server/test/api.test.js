@@ -81,6 +81,12 @@ test('GET fallback plays moves for fetch-only agents', async () => {
   const bad = await call('GET', `/api/games/${id}/moves?seat=${B}&moves=Ke4`);
   assert.equal(bad.status, 400);
   assert.ok(Array.isArray(bad.body.legalMoves));
+  // soft=1: same error but status 200, for tools that hide 4xx bodies
+  const soft = await call('GET', `/api/games/${id}/moves?seat=${B}&moves=Ke4&soft=1`);
+  assert.equal(soft.status, 200);
+  assert.equal(soft.body.ok, false);
+  assert.match(soft.body.error, /Illegal move/);
+  assert.ok(Array.isArray(soft.body.legalMoves));
 });
 
 test('spectators cannot move', async () => {

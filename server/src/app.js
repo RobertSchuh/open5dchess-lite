@@ -205,10 +205,19 @@ export const createApp = ({
     // already carries the secret seat token, so GET leaks nothing new, and
     // requiring an explicit moves= parameter keeps prefetchers harmless.
     if(action === 'moves' && req.method === 'GET') {
-      const raw = url.searchParams.get('moves');
-      if(!raw) { throw new GameError(400, 'Pass ?moves=<5DPGN>[,<5DPGN>...] (and optionally &submit=false)'); }
-      const moves = raw.split(',').map((m) => m.trim()).filter(Boolean);
-      return applyMoves(moves, url.searchParams.get('submit') !== 'false');
+      try {
+        const raw = url.searchParams.get('moves');
+        if(!raw) { throw new GameError(400, 'Pass ?moves=<5DPGN>[,<5DPGN>...] (and optionally &submit=false)'); }
+        const moves = raw.split(',').map((m) => m.trim()).filter(Boolean);
+        return await applyMoves(moves, url.searchParams.get('submit') !== 'false');
+      }
+      catch(err) {
+        // soft=1: report errors with status 200, for fetch tools that hide
+        // the body of 4xx responses from their model.
+        if(url.searchParams.get('soft') !== '1' || !(err instanceof GameError)) { throw err; }
+        return sendJson(res, 200, Object.assign({ ok: false, error: err.message },
+          err.legalMoves ? { legalMoves: err.legalMoves } : {}));
+      }
     }
 
     // Everything an LLM agent needs in one plain-text page: rules, state, how to move

@@ -59,6 +59,7 @@ class Palette {
         capture: 0xf50000,                    //Tint for square highlights on available capture moves
         pastCapture: 0xf50000,                //Tint for square highlights on past available capture moves
         legalPiece: 0xf5b800,                 //Tint for square highlights on pieces with a legal move (open5dchess)
+        lastMove: 0x3d9bf0,                   //Tint for square highlights marking the opponent's last action (open5dchess)
       }
     };
 

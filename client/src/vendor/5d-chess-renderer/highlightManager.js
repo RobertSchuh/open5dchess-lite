@@ -16,12 +16,36 @@ class HighlightManager {
     //Pieces that have a legal move (open5dchess legal move hints)
     this.legalPieceHighlights = [];
 
+    //Squares of the opponent's last action (open5dchess)
+    this.lastMoveHighlights = [];
+
     this.emitter.on('selectedPieceUpdate', this.update.bind(this));
     this.emitter.on('hoverPieceUpdate', this.update.bind(this));
     this.emitter.on('configUpdate', this.update.bind(this));
     this.emitter.on('paletteUpdate', this.update.bind(this));
     this.emitter.on('legalPiecesUpdate', this.update.bind(this));
+    this.emitter.on('lastMovesUpdate', this.update.bind(this));
     this.emitter.on('boardUpdate', this.update.bind(this));
+  }
+  updateLastMoves() {
+    var squares = this.global.lastMoveObjects;
+    //Destroy extra highlights
+    for(var i = squares.length;i < this.lastMoveHighlights.length;i++) {
+      this.lastMoveHighlights[i].destroy();
+      this.lastMoveHighlights.splice(i,1);
+      i--;
+    }
+    for(var i = 0;i < squares.length;i++) { // eslint-disable-line no-redeclare
+      var highlight = Object.assign({}, squares[i]);
+      highlight.alpha = this.global.configStore.get('highlight').lastMoveAlpha;
+      highlight.color = this.global.paletteStore.get('highlight').lastMove;
+      if(typeof this.lastMoveHighlights[i] !== 'undefined') {
+        this.lastMoveHighlights[i].update(highlight);
+      }
+      else {
+        this.lastMoveHighlights[i] = new Highlight(this.global, highlight);
+      }
+    }
   }
   updateLegalPieces() {
     //Skip the selected piece, it already has its own highlight
@@ -49,6 +73,7 @@ class HighlightManager {
   }
   update() {
     this.updateLegalPieces();
+    this.updateLastMoves();
     //Updating selectedPiece (and moves)
     if(
       this.global.selectedPiece !== null &&

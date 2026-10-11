@@ -131,6 +131,10 @@ export default class Renderer extends React.Component {
         this.lastLegalPieces = this.props.legalPieces;
         this.chessRenderer.global.legalPieces(this.props.legalPieces || []);
       }
+      if(!deepequal(this.props.lastMoves, this.prevLastMoves)) {
+        this.prevLastMoves = this.props.lastMoves;
+        this.chessRenderer.global.lastMoves(this.props.lastMoves || []);
+      }
     }
     else {
       window.setTimeout(this.updateRenderer.bind(this), 500);

@@ -222,6 +222,7 @@ class Config {
         selectedAlpha: 0.6,                   //Alpha value for available move highlight (while selected)
         pastSelectedAlpha: 0.4,               //Alpha value for past available move highlight (while selected)
         legalPieceAlpha: 0.45,                //Alpha value for highlights on pieces with a legal move (open5dchess)
+        lastMoveAlpha: 0.5,                   //Alpha value for highlights marking the opponent's last action (open5dchess)
         fadeDuration: 75,                     //Duration for fade in / fade out animation
       },
       ripple: {

@@ -109,7 +109,18 @@ export default class OnlineGameManager {
     let chess = this.chess;
     let myTurn = this.myTurn();
     let hints = myTurn ? this.legalHints.get(chess) : { availableMoves: [], legalPieces: null };
+    //Highlight what the opponent did on their last submitted action: the
+    //square each piece left and the square it actually landed on (realEnd
+    //points into the board the move created, incl. new timelines).
+    let lastMoves = [];
+    let lastAction = chess.actionHistory[chess.actionHistory.length - 1];
+    if(lastAction && this.state && lastAction.player !== this.state.you) {
+      for(let m of lastAction.moves) {
+        lastMoves.push(m.start, m.realEnd || m.end);
+      }
+    }
     return {
+      lastMoves,
       player: chess.player,
       board: chess.board,
       actionHistory: chess.actionHistory,

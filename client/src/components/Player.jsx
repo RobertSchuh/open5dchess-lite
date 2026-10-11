@@ -30,6 +30,7 @@ Basic Props:
  - availableMoves
  - hintsFor (colour the quick hint toggle controls, or null to hide it)
  - legalPieces (squares of pieces with a legal move, or null)
+ - lastMoves (squares touched by the opponent's last action, or null)
  - pastAvailableMoves
  - onMove
 
@@ -446,6 +447,7 @@ export default class Player extends React.Component {
             checks={this.props.checks}
             availableMoves={this.props.availableMoves}
             legalPieces={this.props.legalPieces}
+            lastMoves={this.props.lastMoves}
             pastAvailableMoves={this.props.pastAvailableMoves}
             onMove={this.onMove.bind(this)}
           />

@@ -222,6 +222,7 @@ class OnlineGame extends React.Component {
           checks={this.state.checks}
           availableMoves={this.state.availableMoves}
           legalPieces={this.state.legalPieces}
+          lastMoves={this.state.lastMoves}
           pastAvailableMoves={this.state.pastAvailableMoves}
           onMove={(move) => { this.manager.move(move); }}
           submitCanUndo={this.state.undoable}

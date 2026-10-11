@@ -117,6 +117,9 @@ class Global {
     //Squares of pieces that have a legal move (open5dchess); empty = no highlights
     this.legalPieceObjects = [];
 
+    //Squares touched by the opponent's last action (open5dchess)
+    this.lastMoveObjects = [];
+
     //Object indicating piece hovered over (null if none)
     //Hovered indicates piece that is being considered for selection (but not actually selected)
     /*
@@ -284,6 +287,10 @@ class Global {
   legalPieces(squares) {
     this.legalPieceObjects = Array.isArray(squares) ? squares : [];
     this.emitter.emit('legalPiecesUpdate', this.legalPieceObjects);
+  }
+  lastMoves(squares) {
+    this.lastMoveObjects = Array.isArray(squares) ? squares : [];
+    this.emitter.emit('lastMovesUpdate', this.lastMoveObjects);
   }
   pastAvailableMoves(pastAvailableMoves) {
     this.preTransformPastAvailableMoves = pastAvailableMoves;

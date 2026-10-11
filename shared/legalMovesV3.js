@@ -71,6 +71,9 @@ const RESULTS = ['yes', 'no', 'timeout'];
 
 //Same contract as legalMoves.classifyMoves: one class per move of
 //chess.moves('object', false, false, false), same order.
+//The raw wire buffer for a position, for offline tooling (native profiler).
+export const toBuffer = (input) => serialize(toPosition(input));
+
 export const classifyMoves = (input, totalBudgetMs = 4000, perMoveBudgetMs = 500) => {
   const len = upload(input);
   const rptr = ex.v3_classify(len, totalBudgetMs, perMoveBudgetMs);

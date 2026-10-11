@@ -34,6 +34,22 @@ fn now_ms() -> f64 {
 //Native profiling entry (cargo run --bin profile <file.bin> [reps]): runs
 //classify on a serialized position dumped by the JS wrapper.
 #[cfg(not(target_arch = "wasm32"))]
+pub fn profile_has_legal(buf: &[i32], budget_ms: f64) {
+    let (mut p, mut arena) = parse(buf);
+    let mut ctx = Ctx::new(now_ms() + budget_ms);
+    let h = pos_hash(&p, &mut arena);
+    let t0 = std::time::Instant::now();
+    let r = can_complete(&mut p, &mut arena, &mut ctx, 0, h);
+    println!(
+        "has_legal = {} ({}) in {:.1}s | arena boards {}",
+        r as i32,
+        ["YES", "NO", "TIMEOUT"][r as usize],
+        t0.elapsed().as_secs_f64(),
+        arena.boards.len()
+    );
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn profile_classify(buf: &[i32], reps: usize) {
     for _ in 0..reps {
         let (mut p, mut arena) = parse(buf);
@@ -46,7 +62,7 @@ pub fn profile_classify(buf: &[i32], reps: usize) {
             ctx.deadline = now_ms() + 120000.0;
             let h = pos_hash(&p, &mut arena);
             let r = search_root(&mut p, &mut arena, &mut ctx, h);
-            undo(&mut p, u);
+            undo(&mut p, &mut arena, u);
             counts[r as usize] += 1;
         }
         std::hint::black_box(counts);
@@ -948,12 +964,13 @@ enum Op {
     NewTl { slot: u32, prev_len: u32 },
 }
 struct Undo {
+    arena_len: u32, //arena size before this apply; undo truncates back to it
     a: Op, //destination-side op (applied first)
     b: Op, //start-timeline push
 }
 
 fn apply(p: &mut Pos, arena: &mut Arena, mv: &Mv) -> Undo {
-    let mut ops = Undo { a: Op::None, b: Op::None };
+    let mut ops = Undo { arena_len: arena.boards.len() as u32, a: Op::None, b: Op::None };
     let s = mv.s;
     let d = mv.d;
     //positionIsLatest guard (board.js move): non-latest start is a no-op
@@ -1024,7 +1041,7 @@ fn apply(p: &mut Pos, arena: &mut Arena, mv: &Mv) -> Undo {
     ops
 }
 
-fn undo(p: &mut Pos, ops: Undo) {
+fn undo(p: &mut Pos, arena: &mut Arena, ops: Undo) {
     for op in [ops.b, ops.a] {
         match op {
             Op::None => {}
@@ -1037,6 +1054,13 @@ fn undo(p: &mut Pos, ops: Undo) {
             }
         }
     }
+    //Free the boards this apply created; without this a long search leaks
+    //one or two boards per node and exhausts the wasm 4 GB address space.
+    let n = ops.arena_len as usize;
+    arena.boards.truncate(n);
+    arena.hashes.truncate(n);
+    arena.spatial.truncate(n);
+    arena.pieces.truncate(n);
 }
 
 //=== check detection (port of fastPosition.js #checks + lean scanner) =========
@@ -1628,6 +1652,12 @@ macro_rules! count {
     ($slot:ident, $n:expr) => {};
 }
 
+//Memo caps: a multi-minute search otherwise grows these tables past the
+//wasm 4 GB address space (the tables are pure caches; clearing is safe).
+const CHECKS_MEMO_CAP: usize = 4_000_000;
+const SEEN_CAP: usize = 16_000_000;
+const MEMO_CAP: usize = 8_000_000;
+
 fn check_facts(p: &mut Pos, arena: &mut Arena, ctx: &mut Ctx, depth: usize, h: u64, present: &[usize]) -> CheckFacts {
     if let Some(f) = ctx.checks_memo.get(&h) {
         return *f;
@@ -1638,6 +1668,7 @@ fn check_facts(p: &mut Pos, arena: &mut Arena, ctx: &mut Ctx, depth: usize, h: u
     let info = check_info_from(p, &list);
     let facts = CheckFacts { in_check: !list.is_empty(), dead: info.dead, hot: info.hot };
     ctx.list_bufs[depth] = list;
+    if ctx.checks_memo.len() >= CHECKS_MEMO_CAP { ctx.checks_memo.clear(); }
     ctx.checks_memo.insert(h, facts);
     facts
 }
@@ -1705,7 +1736,7 @@ fn can_complete(p: &mut Pos, arena: &mut Arena, ctx: &mut Ctx, depth: usize, h: 
         let u = timed!(T_STEP, apply(p, arena, mv));
         let ch = timed!(T_STEP, pos_hash(p, arena));
         if let Some(&r) = ctx.memo.get(&ch) {
-            undo(p, u);
+            undo(p, arena, u);
             if r == YES {
                 ctx.yes_path.push(h);
                 ctx.move_bufs[depth] = moves;
@@ -1713,10 +1744,11 @@ fn can_complete(p: &mut Pos, arena: &mut Arena, ctx: &mut Ctx, depth: usize, h: 
             }
             continue; //proven NO
         }
+        if ctx.seen.len() >= SEEN_CAP { ctx.seen.clear(); }
         if ctx.seen.insert(ch) {
             match can_complete(p, arena, ctx, depth + 1, ch) {
                 YES => {
-                    undo(p, u);
+                    undo(p, arena, u);
                     result = YES;
                     break;
                 }
@@ -1724,7 +1756,7 @@ fn can_complete(p: &mut Pos, arena: &mut Arena, ctx: &mut Ctx, depth: usize, h: 
                 _ => {}
             }
         }
-        undo(p, u);
+        undo(p, arena, u);
     }
     ctx.move_bufs[depth] = moves;
     if result == YES {
@@ -1747,8 +1779,10 @@ fn search_root(p: &mut Pos, arena: &mut Arena, ctx: &mut Ctx, h: u64) -> u8 {
     let r = can_complete(p, arena, ctx, 0, h);
     if r == NO {
         //completed exhaustive search: everything it visited is uncompletable
-        for &x in ctx.seen.iter() {
-            ctx.memo.insert(x, NO);
+        if ctx.memo.len() + ctx.seen.len() <= MEMO_CAP {
+            for &x in ctx.seen.iter() {
+                ctx.memo.insert(x, NO);
+            }
         }
         ctx.memo.insert(h, NO);
     } else if r == YES {
@@ -1841,7 +1875,7 @@ pub extern "C" fn v3_classify(len: i32, total_ms: f64, per_move_ms: f64) -> *con
         ctx.deadline = if end < t { end } else { t };
         let h = pos_hash(&p, &mut arena);
         let r = search_root(&mut p, &mut arena, &mut ctx, h);
-        undo(&mut p, u);
+        undo(&mut p, &mut arena, u);
         out.push(r as i32);
     }
     out.as_ptr()

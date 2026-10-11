@@ -155,6 +155,48 @@ class Global {
       this.emitter.emit('resizeEvent');
     }));
 
+    //Fallback pinch-zoom on raw touch events. Some mobile browsers (Firefox
+    //for Android) don't reliably deliver both pointers to PIXI's interaction
+    //manager, so pixi-viewport's own pinch plugin never engages. These
+    //listeners implement the same zoom-about-midpoint directly, but stay
+    //dormant whenever pixi-viewport is already tracking two touches (Chrome).
+    //preventDefault() on two-finger moves also stops browser page zoom on
+    //browsers that ignore the viewport meta (iOS Safari).
+    let pinchDist = null;
+    const touchInfo = (e) => {
+      const rect = this.app.view.getBoundingClientRect();
+      const [a, b] = [e.touches[0], e.touches[1]];
+      return {
+        dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
+        mid: { x: (a.clientX + b.clientX) / 2 - rect.left, y: (a.clientY + b.clientY) / 2 - rect.top },
+      };
+    };
+    this.app.view.addEventListener('touchstart', (e) => {
+      pinchDist = e.touches.length === 2 ? touchInfo(e).dist : null;
+    }, { passive: true });
+    this.app.view.addEventListener('touchmove', (e) => {
+      if(e.touches.length !== 2) { pinchDist = null; return; }
+      e.preventDefault(); //never let the browser zoom/scroll a two-finger gesture
+      if(this.viewport.input.count() >= 2) { pinchDist = null; return; } //pixi pinch has it
+      const { dist, mid } = touchInfo(e);
+      if(pinchDist === null) { pinchDist = dist; return; }
+      if(pinchDist <= 0 || dist <= 0) { return; }
+      const before = this.viewport.toWorld(mid.x, mid.y);
+      this.viewport.scale.x *= dist / pinchDist;
+      this.viewport.scale.y = this.viewport.scale.x;
+      const clamp = this.viewport.plugins.get('clamp-zoom');
+      if(clamp) { clamp.clamp(); }
+      //Keep the point under the fingers fixed while zooming
+      const after = this.viewport.toWorld(mid.x, mid.y);
+      this.viewport.x += (after.x - before.x) * this.viewport.scale.x;
+      this.viewport.y += (after.y - before.y) * this.viewport.scale.y;
+      pinchDist = dist;
+      this.viewport.emit('zoomed', { viewport: this.viewport, type: 'pinch' });
+      this.viewport.emit('moved', { viewport: this.viewport, type: 'pinch' });
+      this.viewport.dirty = true;
+    }, { passive: false });
+    this.app.view.addEventListener('touchend', () => { pinchDist = null; }, { passive: true });
+
     //Emit element update
     this.emitter.emit('elementUpdate');
   }

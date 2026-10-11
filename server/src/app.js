@@ -258,14 +258,31 @@ export const createApp = ({
     fs.stat(file, (err, st) => {
       if(err || !st.isFile()) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Not found'); return; }
       const ext = path.extname(file).toLowerCase();
-      res.writeHead(200, {
+      const headers = {
         'Content-Type': CONTENT_TYPES[ext] || 'application/octet-stream',
-        'Content-Length': st.size,
         // Vite puts content hashes in asset names, so those can be cached forever
         'Cache-Control': rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
-      });
-      if(req.method === 'HEAD') { res.end(); return; }
-      fs.createReadStream(file).pipe(res);
+      };
+      const send = (sendFile, size) => {
+        headers['Content-Length'] = size;
+        res.writeHead(200, headers);
+        if(req.method === 'HEAD') { res.end(); return; }
+        fs.createReadStream(sendFile).pipe(res);
+      };
+      // The release build precompresses text assets (file.gz next to file);
+      // serving those saves ~3x on the Pi's thin uplink at zero CPU cost.
+      if(/\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
+        fs.stat(file + '.gz', (gzErr, gzSt) => {
+          if(!gzErr && gzSt.isFile()) {
+            headers['Content-Encoding'] = 'gzip';
+            headers['Vary'] = 'Accept-Encoding';
+            send(file + '.gz', gzSt.size);
+          }
+          else { send(file, st.size); }
+        });
+        return;
+      }
+      send(file, st.size);
     });
   };
 

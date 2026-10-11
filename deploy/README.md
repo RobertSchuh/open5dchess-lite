@@ -17,8 +17,11 @@ release/
 
 ```sh
 scripts/make-release.sh                    # builds client, assembles release/
-rsync -a --delete release/ pi@pi-server.local:~/projects/open5dchess/release/
+rsync -a --delete --exclude=node_modules release/ pi@pi-server.local:~/projects/open5dchess/release/
 ```
+
+(`--exclude=node_modules` keeps the Pi's installed dependencies; without it,
+`--delete` removes them and the service crash-loops until the next `npm ci`.)
 
 ## Install (on the Pi, once)
 

@@ -9,6 +9,11 @@ cd "$(dirname "$0")/.."
 rm -rf release
 mkdir -p release/client release/server
 cp -r client/dist release/client/dist
+# Precompress text assets; the server sends file.gz when the browser accepts
+# gzip (the 3.4 MB JS bundle is the whole first load on a phone).
+find release/client/dist -type f \( -name '*.js' -o -name '*.css' -o -name '*.html' \
+  -o -name '*.svg' -o -name '*.json' -o -name '*.map' -o -name '*.txt' \) \
+  -exec gzip -k -9 {} +
 cp -r server/src server/package.json server/package-lock.json release/server/
 cp -r shared release/shared
 rm -rf release/shared/v3/engine-rs/target

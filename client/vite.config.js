@@ -23,8 +23,12 @@ export default defineConfig({
       // objects for them, so use the package's ESM copies instead.
       { find: /^@material-ui\/icons\/(\w+)$/, replacement: '@material-ui/icons/esm/$1' },
       // Browser polyfills for Node built-ins used by nedb (local DB).
+      // Without the `events` one the prod bundle externalizes it to a
+      // non-constructor stub and `Datastore extends EventEmitter` throws
+      // at startup (blank page); the dev server shims it differently.
       { find: /^util\/?$/, replacement: 'util/' },
       { find: /^path$/, replacement: 'path-browserify' },
+      { find: /^events$/, replacement: 'events/' },
       // Code shared with the server (repo-root shared/).
       { find: /^shared\/(.*)$/, replacement: path.resolve(import.meta.dirname, '../shared/$1') },
       { find: /^(polyfills|App|App\.css|state|network|route|components|utils|locales|assets|vendor)(\/.*)?$/, replacement: `${src}/$1$2` },

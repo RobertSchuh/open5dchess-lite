@@ -1793,16 +1793,40 @@ fn can_complete(p: &mut Pos, arena: &mut Arena, ctx: &mut Ctx, depth: usize, h: 
                     }
                 }
             }
-            //Branching travels stay: they shift the present backward and can
-            //activate older timelines, and checks are only scanned from
-            //present timelines, so a branch can void this check (that is the
-            //escape in mateAcrossTime). Non-branching jumps and unrelated
-            //spatial moves cannot touch it and are pruned.
+            //Branching travels can void a check two ways: the new head lands
+            //behind the checking board (present drops below it), or the
+            //branch activates an older timeline that does. A branch that does
+            //neither can still ENABLE a later answer, but only when the new
+            //head is our own parity (otherwise we never move there in this
+            //action). Anything else is prunable.
+            let act_parity = (p.action % 2) as i32;
+            let mut fam_odd = 0usize;
+            let mut fam_even = 0usize;
+            for l in 0..p.tls.len() {
+                if p.tls[l].is_none() { continue; }
+                if fam_odd < l && l % 2 != 0 { fam_odd = l; }
+                if fam_even < l && l % 2 == 0 { fam_even = l; }
+            }
+            let mut act_void = false;
+            for l in 0..p.tls.len() {
+                let tl = match &p.tls[l] { Some(tl) => tl, None => continue };
+                let active = (fam_even + 1 >= l && l % 2 != 0) || (fam_odd + 3 >= l && l % 2 == 0);
+                //one branch extends a family by one slot (step 2): anything
+                //inside the once-widened window could become active
+                let near = (fam_even + 3 >= l && l % 2 != 0) || (fam_odd + 5 >= l && l % 2 == 0);
+                if !active && near && (tl.len() as i32 - 1) <= cs.t + 1 {
+                    act_void = true;
+                    break;
+                }
+            }
             moves.retain(|m| {
                 //branching travel: destination board is not the latest of its timeline
                 if (m.d.l != m.s.l || m.d.t != m.s.t)
                     && m.d.t < match &p.tls[m.d.l as usize] { Some(tl) => tl.len() as i32 - 1, None => 0 } {
-                    return true;
+                    if act_void { return true; }                       //activation can void the check
+                    if m.d.t <= cs.t { return true; }                  //head behind the checker: voids directly
+                    if (m.d.t + 1).rem_euclid(2) == act_parity { return true; } //our head: mandatory follow-up may answer
+                    //else: cannot void, cannot enable; only direct hits below can save it
                 }
                 let hits = |x: P4| -> bool {
                     if x.l == cs.l && x.r == cs.r && x.f == cs.f && (x.t - cs.t).abs() <= 1 { return true; } //capture the checker (also once copied forward)

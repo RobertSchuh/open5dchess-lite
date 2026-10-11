@@ -185,7 +185,7 @@ export const createApp = ({
           try { game.undo(seat); } catch(e) { break; }
         }
         if(err instanceof GameError && err.status !== 403 && !game.ended && seat === game.player) {
-          err.legalMoves = await game.legalMoves();
+          err.legalMoves = (await game.legalMoves()).moves;
         }
         throw err;
       }

@@ -46,7 +46,7 @@ test("fool's mate is not mate in 5D: the king escapes back in time", async () =>
   play(g, 'white', ['g4']);
   play(g, 'black', ['Qh4']);
   assert.equal(g.result, null);
-  assert.ok((await g.legalMoves()).some((m) => m.includes('>>')));
+  assert.ok((await g.legalMoves()).moves.some((m) => m.includes('>>')));
 });
 
 test('checkmate across timelines ends the game', () => {
@@ -77,7 +77,7 @@ test('legal move list only contains moves that can complete an action', async ()
   play(g, 'white', ['e4']);
   play(g, 'black', ['f6']);
   play(g, 'white', ['Qh5']);
-  const legal = await g.legalMoves();
+  const legal = (await g.legalMoves()).moves;
   assert.deepEqual([...legal].sort(), ['g6']);
 });
 
@@ -131,7 +131,7 @@ test('in check on one board: only moves that can still lift the check there are 
   const actions = ['e3', 'e6', 'Qf3', 'Nc6', 'Na3', 'Nb4', 'Nb5', 'Nxc2', 'Kd1', 'Nxa1', 'Nxc7', 'Qxc7',
     '(0T7)Qf3>>x(0T3)f7~', '(0T7)Qc7>>x(0T2)c2~', '(-1T3)Bd3', '(-1T3)Qc2>>(0T2)d1~'];
   actions.forEach((m, i) => play(g, i % 2 === 0 ? 'white' : 'black', [m]));
-  const legal = await g.legalMoves();
+  const legal = (await g.legalMoves()).moves;
   const onCheckedBoard = legal.filter((m) => m.startsWith('(-2T3)'));
   assert.ok(onCheckedBoard.includes('(-2T3)Kxd1'));
   assert.ok(onCheckedBoard.includes('(-2T3)Qxd1'));

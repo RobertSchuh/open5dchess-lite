@@ -285,8 +285,11 @@ export class Game {
 
   // Moves for the player to move that can still lead to a submittable action.
   // Classification runs in the worker pool; concurrent callers share one job.
+  // -> { moves, unverified } where `unverified` counts moves the search
+  // could not prove within budget (kept in the list: never hide a possibly
+  // legal move, but callers must not present them as proven).
   async legalMoves() {
-    if(this.ended) { return []; }
+    if(this.ended) { return { moves: [], unverified: 0 }; }
     if(this.legalCache && this.legalCache.version === this.version) { return this.legalCache.promise; }
     // Names via 5d-chess-js (needs skipDetection off its mate gating), classes
     // via the fast engine; both lists come from the same generator in the same
@@ -296,9 +299,23 @@ export class Game {
     let names;
     try { names = this.chess.moves('5dpgn', false, false, false).trim().split('\n').filter(Boolean); }
     finally { this.chess.skipDetection = skip; }
+    const version = this.version;
     const promise = pool.run('classify', trimState(this.chess.state()), [LEGAL_MOVES_MS], LEGAL_MOVES_MS)
-      // 'unknown' (search timed out) is kept: never hide a possibly legal move
-      .then((classes) => names.filter((n, i) => classes[i] !== 'illegal'));
+      .then((classes) => {
+        const res = {
+          moves: names.filter((n, i) => classes[i] !== 'illegal'),
+          unverified: classes.filter((c) => c === 'unknown').length,
+        };
+        // A completed classification with no surviving move is a full
+        // mate/stalemate proof, even where the dedicated end search timed out.
+        if(res.moves.length === 0 && res.unverified === 0 && !this.ended && this.version === version
+          && this.chess.moveBuffer.length === 0) { //only a clean position proves mate (not mid-action)
+          if(this.chess.inCheck) { this.end(other(this.player), 'checkmate'); }
+          else { this.end('draw', 'stalemate'); }
+          this.changed();
+        }
+        return res;
+      });
     this.legalCache = { version: this.version, promise };
     return promise;
   }
@@ -395,7 +412,7 @@ export class Game {
     const state = this.publicState(seat);
     const yourTurn = !this.ended && seat === this.player;
     const threatsList = yourTurn ? await this.currentThreats() : [];
-    const legalMoves = yourTurn ? await this.legalMoves() : [];
+    const legal = yourTurn ? await this.legalMoves() : { moves: [], unverified: 0 };
     return {
       id: this.id,
       version: this.version,
@@ -423,7 +440,10 @@ export class Game {
       // What the opponent could do if you made no move (your turn only)
       threats: threatsList,
       threatsText: yourTurn ? threatsText(threatsList, this.chess.inCheck) : null,
-      legalMoves,
+      legalMoves: legal.moves,
+      // > 0 when the legality search timed out: that many listed moves are
+      // unproven (kept so a possibly legal move is never hidden)
+      legalMovesUnverified: legal.unverified,
     };
   }
   #timelinesText(seat, yourTurn, since) {

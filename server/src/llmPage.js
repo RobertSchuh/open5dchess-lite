@@ -22,7 +22,10 @@ export const stateText = (s) => {
   lines.push('', 'ALL BOARDS', s.timelines);
   if(s.yourTurn) {
     lines.push('', 'THREATS', s.threatsText);
-    lines.push('', `LEGAL MOVES (${s.legalMoves.length})`, s.legalMoves.join(', '));
+    const note = s.legalMovesUnverified > 0
+      ? ` - WARNING: the legality search timed out; ${s.legalMovesUnverified} of these are unproven and may turn out to have no legal continuation`
+      : '';
+    lines.push('', `LEGAL MOVES (${s.legalMoves.length})${note}`, s.legalMoves.join(', '));
   }
   lines.push('', 'GAME SO FAR (5DPGN)', s.pgn.trim());
   return lines.join('\n');

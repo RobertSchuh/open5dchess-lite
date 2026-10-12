@@ -62,6 +62,23 @@ test('moves in one request are all-or-nothing, with legal moves on error', async
   assert.equal(ok.body.toMove, 'black');
 });
 
+test('rematch restarts the game on the same links with colors swapped', async () => {
+  const { id, W, B, S } = await newGame();
+  // not over yet
+  assert.equal((await call('POST', `/api/games/${id}/rematch?seat=${W}`)).status, 409);
+  await call('POST', `/api/games/${id}/moves?seat=${W}`, { moves: ['e4'] });
+  await call('POST', `/api/games/${id}/resign?seat=${B}`);
+  assert.equal((await call('POST', `/api/games/${id}/rematch?seat=${S}`)).status, 403);
+  const re = await call('POST', `/api/games/${id}/rematch?seat=${B}`);
+  assert.equal(re.status, 200);
+  // The response already speaks from the new perspective
+  assert.equal(re.body.you, 'white');
+  assert.equal(re.body.result, null);
+  assert.equal(re.body.pgn.includes('e4'), false);
+  const other = await call('GET', `/api/games/${id}/state?seat=${W}`);
+  assert.equal(other.body.you, 'black');
+});
+
 test('GET fallback plays moves for fetch-only agents', async () => {
   const { id, W, B } = await newGame();
   // no moves param -> explanatory 400, nothing happens

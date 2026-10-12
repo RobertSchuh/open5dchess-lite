@@ -5,7 +5,7 @@ import { Trans } from '@lingui/macro';
 
 import Box from '@material-ui/core/Box';
 import Button from '@material-ui/core/Button';
-import Chip from '@material-ui/core/Chip';
+import ButtonGroup from '@material-ui/core/ButtonGroup';
 import CircularProgress from '@material-ui/core/CircularProgress';
 import Dialog from '@material-ui/core/Dialog';
 import DialogActions from '@material-ui/core/DialogActions';
@@ -58,6 +58,11 @@ class OnlineGame extends React.Component {
       }),
       this.manager.on('onStateUpdate', (game) => {
         if(this.state.game === null) { this.onFirstState(game); }
+        else if(this.state.game.you !== game.you) {
+          //Rematch: colors swapped, view the board from the new side
+          this.applyOrientation(game);
+          this.setState({ barExpanded: null });
+        }
         this.setState({ game: game, loading: false });
       }),
       this.manager.on('onClockUpdate', (clock) => {
@@ -78,12 +83,15 @@ class OnlineGame extends React.Component {
     this.configListener = this.context.on('configUpdate', () => { this.manager.refreshBoard(); });
     this.manager.connect();
   }
-  onFirstState(game) {
-    //View the board from your own side
+  //View the board from your own side
+  applyOrientation(game) {
     if(game.you === 'white' || game.you === 'black') {
       const flip = game.you === 'black';
       crConfig.set({ board: { flipTimeline: flip, flipRank: flip, flipFile: flip } }, this.context);
     }
+  }
+  onFirstState(game) {
+    this.applyOrientation(game);
     //Creator waiting for the opponent: show the invite right away
     const opponent = game.you === 'white' ? 'black' : 'white';
     if(this.links && game.actionHistory.length === 0 && !game.players[opponent].connected) {
@@ -121,14 +129,15 @@ class OnlineGame extends React.Component {
     else {
       text = game.players[opponent].connected ? "Opponent's move" : "Opponent's move (not connected)";
     }
+    if(!this.state.connected) { text += ' · reconnecting'; }
     //The game counts as underway once anything has been played or the
     //opponent has shown up; from then on the bar folds into a small pill
     //so it stops covering the board (tap to expand).
     const underway = game.actionHistory.length > 0 || game.players[opponent].connected;
     const expanded = this.state.barExpanded !== null ? this.state.barExpanded
       : (!underway || game.result !== null);
-    //Below the app bar AND the Player view toolbar, so it never covers buttons
-    const barStyle = { position: 'fixed', top: 132, left: '50%', transform: 'translateX(-50%)', zIndex: 1200, maxWidth: 'calc(100vw - 16px)' };
+    //Top right, below the app bar and the Player view toolbar
+    const barStyle = { position: 'fixed', top: 132, right: 8, zIndex: 1200, maxWidth: 'calc(100vw - 16px)' };
     const dot = (
       <span style={{
         display: 'inline-block', width: 10, height: 10, borderRadius: 5, flexShrink: 0,
@@ -137,7 +146,7 @@ class OnlineGame extends React.Component {
     );
     if(!expanded) {
       return (
-        <Paper elevation={4} style={barStyle} onClick={() => this.setState({ barExpanded: true })}>
+        <Paper elevation={2} style={barStyle} onClick={() => this.setState({ barExpanded: true })}>
           <Box px={1} py={0.25} display='flex' alignItems='center' style={{ gap: 6, cursor: 'pointer', opacity: 0.85 }}>
             {dot}
             <Typography variant='caption' style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{text}</Typography>
@@ -146,30 +155,32 @@ class OnlineGame extends React.Component {
       );
     }
     return (
-      <Paper elevation={4} style={barStyle}>
-        <Box px={1} py={0.5} display='flex' alignItems='center' flexWrap='wrap' style={{ gap: 8 }}>
-          <Chip
-            size='small'
-            label={this.state.connected ? 'Online' : 'Reconnecting...'}
-            style={{ backgroundColor: this.state.connected ? '#2e7d32' : '#b26a00', color: 'white' }}
-          />
+      <Paper elevation={2} style={barStyle}>
+        <Box px={1} py={0.5} display='flex' alignItems='center' flexWrap='wrap' justifyContent='flex-end' style={{ gap: 8 }}>
+          {dot}
           <Typography variant='body2' style={{ fontWeight: 600 }}>{text}</Typography>
-          <Box flexGrow={1} />
-          {this.links ?
-            <Button size='small' variant='outlined' onClick={() => this.setState({ inviteOpen: true })}>
-              <Trans>Invite</Trans>
-            </Button>
-          : null}
-          {isPlayer && !game.result ?
-            <Button size='small' color='secondary' variant='outlined' onClick={() => this.setState({ resignOpen: true })}>
-              <Trans>Resign</Trans>
-            </Button>
-          : null}
-          {underway && game.result === null ?
-            <Button size='small' onClick={() => this.setState({ barExpanded: false })}>
-              <Trans>Hide</Trans>
-            </Button>
-          : null}
+          <ButtonGroup size='small'>
+            {isPlayer && game.result ?
+              <Button color='primary' variant='contained' onClick={() => this.manager.rematch()}>
+                <Trans>Rematch</Trans>
+              </Button>
+            : null}
+            {this.links ?
+              <Button variant='outlined' onClick={() => this.setState({ inviteOpen: true })}>
+                <Trans>Invite</Trans>
+              </Button>
+            : null}
+            {isPlayer && !game.result ?
+              <Button color='secondary' variant='outlined' onClick={() => this.setState({ resignOpen: true })}>
+                <Trans>Resign</Trans>
+              </Button>
+            : null}
+            {underway ?
+              <Button variant='outlined' onClick={() => this.setState({ barExpanded: false })}>
+                <Trans>Hide</Trans>
+              </Button>
+            : null}
+          </ButtonGroup>
         </Box>
       </Paper>
     );

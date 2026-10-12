@@ -54,6 +54,7 @@ HOW TO PLAY OVER HTTP (seat token included in every URL)
   If your tool hides the body of 4xx responses, also add &soft=1: errors then
   come back with status 200 as {"ok":false,"error":...,"legalMoves":[...]}.
 - Resign:                     POST ${api}/resign?${q}
+- Rematch (after game over):  POST ${api}/rematch?${q}   -> same game id and links, colors swapped, fresh board
 A rejected move returns an error and the list of legal moves; nothing is played.
 
 CURRENT STATE

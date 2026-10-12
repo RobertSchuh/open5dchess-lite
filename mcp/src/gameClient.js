@@ -64,6 +64,8 @@ export class GameClient {
   }
   undo(since = null) { return this.request('POST', 'undo', { query: since === null ? {} : { since: String(since) } }); }
   resign() { return this.request('POST', 'resign'); }
+  // Fresh game on the same links once the game is over; colors swap
+  rematch() { return this.request('POST', 'rematch'); }
   // What the opponent could do after these moves (nothing is played)
   preview(moves) { return this.request('POST', 'preview', { body: { moves } }); }
   async rules() {

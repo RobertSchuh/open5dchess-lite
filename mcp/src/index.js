@@ -186,4 +186,12 @@ server.registerTool('resign', {
   return text(formatState(s, { includeBoards: false }));
 }));
 
+server.registerTool('rematch', {
+  title: 'Rematch',
+  description: 'Start a fresh game on the same links once the current game is over. Colors swap: you play the other side.',
+}, run(async () => {
+  const s = await needGame().rematch();
+  return text(formatState(s));
+}));
+
 await server.connect(new StdioServerTransport());

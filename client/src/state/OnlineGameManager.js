@@ -195,6 +195,9 @@ export default class OnlineGameManager {
   resign() {
     this.send({ type: 'resign' });
   }
+  rematch() {
+    this.send({ type: 'rematch' });
+  }
   setNickname(nickname) {
     this.send({ type: 'nickname', nickname: nickname });
   }

@@ -220,6 +220,32 @@ export class Game {
     this.changed();
   }
 
+  // Fresh game in place: same id, links and settings, colors swapped.
+  // Either player can start it once the game is over.
+  rematch(seat) {
+    if(!this.ended) { throw new GameError(409, 'The game is not over yet'); }
+    if(seat !== 'white' && seat !== 'black') { throw new GameError(403, 'Spectators cannot start a rematch'); }
+    // The whole seat objects trade places (token, nickname, connections),
+    // so everyone keeps their link and plays the other color. Callers must
+    // re-resolve tokens to colors after this.
+    const w = this.seats.white;
+    this.seats.white = this.seats.black;
+    this.seats.black = w;
+    this.result = null;
+    this.endedAt = null;
+    this.chess = new Chess();
+    this.chess.reset(this.variant);
+    if(this.timeControl) {
+      // Same construction as in the constructor (new ChessClock(tc) mis-parses)
+      this.clock = new ChessClock();
+      this.clock.reset(String(this.timeControl));
+    }
+    // Board names repeat across games; stale stamps would hide the new
+    // boards from clients fetching with ?since=
+    this.boardStamps = new Map();
+    this.changed();
+  }
+
   end(winner, reason) {
     if(this.ended) { return; }
     this.result = { winner, reason };

@@ -88,6 +88,33 @@ test('resign ends the game for the other side', () => {
   assert.throws(() => g.resign('white'), /over/);
 });
 
+test('rematch swaps colors on the same tokens and resets the game', () => {
+  const g = new Game({ id: 'x', timeControl: '1' });
+  const whiteToken = g.seats.white.token;
+  const blackToken = g.seats.black.token;
+  g.setNickname('white', 'Rob');
+  assert.throws(() => g.rematch('white'), /not over/);
+  play(g, 'white', ['e4']);
+  g.resign('black');
+  assert.throws(() => g.rematch('spectator'), /Spectators/);
+  const versionBefore = g.version;
+  g.rematch('black');
+  // Same links, opposite colors; nickname travels with the person
+  assert.equal(g.seatFor(whiteToken), 'black');
+  assert.equal(g.seatFor(blackToken), 'white');
+  assert.equal(g.seats.black.nickname, 'Rob');
+  // Fresh game, same settings
+  assert.equal(g.result, null);
+  assert.equal(g.chess.actionHistory.length, 0);
+  assert.equal(g.player, 'white');
+  assert.equal(g.timeControl, '1');
+  assert.equal(g.clock.state().running, false);
+  assert.ok(g.version > versionBefore);
+  // And it is playable: the former white moves as black after white's e4
+  play(g, 'white', ['e4']);
+  g.move('black', 'e5');
+});
+
 test('clock flags the player whose time runs out', () => {
   let now = 1000000;
   const g = new Game({ id: 'x', timeControl: '1', now: () => now });

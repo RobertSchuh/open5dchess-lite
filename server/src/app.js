@@ -245,6 +245,13 @@ export const createApp = ({
       return sendJson(res, 200, await game.textState(seat, { since: sinceParam(url) }));
     }
 
+    // Fresh game with the same id, links and settings, colors swapped
+    if(action === 'rematch' && req.method === 'POST') {
+      game.rematch(seat);
+      // The token maps to the other color now; answer from the new perspective
+      return sendJson(res, 200, await game.textState(seatOf(game, url.searchParams.get('seat')), { since: sinceParam(url) }));
+    }
+
     // Long-poll until it's this seat's turn or the game ends
     // (spectators: until anything changes after `since`).
     if(action === 'wait' && req.method === 'GET') {
@@ -342,7 +349,7 @@ export const createApp = ({
   });
 
   // WebSocket: /ws?game=<id>&seat=<token>
-  // client -> server: {type:'move', move} {type:'undo'} {type:'submit'} {type:'resign'} {type:'nickname', nickname}
+  // client -> server: {type:'move', move} {type:'undo'} {type:'submit'} {type:'resign'} {type:'rematch'} {type:'nickname', nickname}
   // server -> client: {type:'state', state} {type:'error', message} {type:'gone'}
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_BODY });
   server.on('upgrade', (req, socket, head) => {
@@ -355,33 +362,37 @@ export const createApp = ({
     if(url.pathname !== '/ws') { return reject(404, 'Not Found'); }
     let game;
     try { game = store.get(url.searchParams.get('game')); } catch(err) { return reject(404, 'Not Found'); }
-    const seat = game.seatFor(url.searchParams.get('seat'));
-    if(!seat) { return reject(403, 'Forbidden'); }
-    wss.handleUpgrade(req, socket, head, (ws) => onSocket(ws, game, seat));
+    const token = url.searchParams.get('seat');
+    if(!game.seatFor(token)) { return reject(403, 'Forbidden'); }
+    wss.handleUpgrade(req, socket, head, (ws) => onSocket(ws, game, token));
   });
 
-  const onSocket = (ws, game, seat) => {
+  const onSocket = (ws, game, token) => {
+    // A rematch swaps the colors behind the seat tokens, so the token is
+    // resolved per use rather than once at connect time.
+    const seat = () => game.seatFor(token);
     const limiter = socketMessageLimit();
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
     const send = (msg) => { if(ws.readyState === ws.OPEN) { ws.send(JSON.stringify(msg)); } };
     const off = game.onChange(() => {
       if(game.removed) { send({ type: 'gone' }); ws.close(4404, 'Game expired'); return; }
-      send({ type: 'state', state: game.publicState(seat) });
+      send({ type: 'state', state: game.publicState(seat()) });
     });
-    game.connect(seat);
-    send({ type: 'state', state: game.publicState(seat) });
+    game.connect(seat());
+    send({ type: 'state', state: game.publicState(seat()) });
 
     ws.on('message', (data) => {
       if(!limiter.allow('msg')) { send({ type: 'error', message: 'Too many messages' }); return; }
       let msg;
       try { msg = JSON.parse(data.toString()); } catch(err) { send({ type: 'error', message: 'Bad JSON' }); return; }
       try {
-        if(msg.type === 'move') { game.move(seat, msg.move); }
-        else if(msg.type === 'undo') { game.undo(seat); }
-        else if(msg.type === 'submit') { game.submit(seat); }
-        else if(msg.type === 'resign') { game.resign(seat); }
-        else if(msg.type === 'nickname') { game.setNickname(seat, msg.nickname); }
+        if(msg.type === 'move') { game.move(seat(), msg.move); }
+        else if(msg.type === 'undo') { game.undo(seat()); }
+        else if(msg.type === 'submit') { game.submit(seat()); }
+        else if(msg.type === 'resign') { game.resign(seat()); }
+        else if(msg.type === 'rematch') { game.rematch(seat()); }
+        else if(msg.type === 'nickname') { game.setNickname(seat(), msg.nickname); }
         else if(msg.type === 'ping') { send({ type: 'pong' }); }
         else { send({ type: 'error', message: 'Unknown message type' }); }
       }
@@ -389,12 +400,12 @@ export const createApp = ({
         send({ type: 'error', message: err instanceof GameError ? err.message : 'Internal error' });
         if(!(err instanceof GameError)) { console.error(err); }
         // Resync the client after a rejected action
-        send({ type: 'state', state: game.publicState(seat) });
+        send({ type: 'state', state: game.publicState(seat()) });
       }
     });
     ws.on('close', () => {
       off();
-      if(!game.removed) { game.disconnect(seat); }
+      if(!game.removed) { game.disconnect(seat()); }
     });
   };
 

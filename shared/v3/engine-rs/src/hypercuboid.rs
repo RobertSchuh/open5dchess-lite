@@ -263,6 +263,8 @@ pub(crate) struct Axis {
 pub(crate) struct Universe {
     pub moves: Vec<Mv>,
     pub axes: Vec<Axis>,
+    /// Turn (half-move units) of the present when the universe was built
+    pub present_t: i32,
 }
 
 fn is_branching(p: &Pos, m: &Mv) -> bool {
@@ -284,6 +286,10 @@ pub(crate) fn build_universe(p: &Pos, arena: &mut Arena) -> Universe {
     let mut axes: Vec<Axis> = Vec::new();
     let mut present0: Vec<usize> = Vec::new();
     present_timelines(p, &mut present0);
+    let present_t = present0
+        .first()
+        .map(|&l| (p.tls[l].as_ref().unwrap().len() - 1) as i32)
+        .unwrap_or(0);
     for l in 0..p.tls.len() {
         let tl = match &p.tls[l] {
             Some(tl) => tl,
@@ -337,7 +343,7 @@ pub(crate) fn build_universe(p: &Pos, arena: &mut Arena) -> Universe {
         }
         axes.push(Axis { tl: None, present: false, sms });
     }
-    Universe { moves, axes }
+    Universe { moves, axes, present_t }
 }
 
 pub(crate) fn full_hypercuboid(u: &Universe) -> Hypercuboid {
@@ -612,6 +618,43 @@ pub(crate) fn test_point(
         cleanup(p, arena, &mut undos);
         return Problem::Legal(action);
     }
+    //Deferral rule (Robert, 2026-10-12): when a branch shifted the present
+    //BACK, the other boards' moves are deferrable — anything they could do
+    //now they could do next turn — so every point sharing these new-axis
+    //choices is equi-legal. The surviving check refutes the whole family:
+    //exact on the new-timeline axes, free on every playable axis. This is
+    //what reduces a travel-mate proof to one test per backward landing.
+    p.action += 1;
+    let mut opp_present: Vec<usize> = Vec::new();
+    present_timelines(p, &mut opp_present);
+    p.action -= 1;
+    let new_present_t = opp_present
+        .first()
+        .map(|&l| (p.tls[l].as_ref().unwrap().len() - 1) as i32)
+        .unwrap_or(i32::MAX);
+    if new_present_t < u.present_t {
+        //The earliest-head branch defines the new present; per the ruling,
+        //every other move in the action (on boards or further travels) is
+        //deferrable, so the whole family {this branch} x anything fails with
+        //this check: a codim-1 slice, one test per backward landing.
+        let mut best: Option<(usize, i32)> = None; //(axis, head turn)
+        for (a, &id) in point.iter().enumerate() {
+            if let Sm::Branch(i) = u.axes[a].sms[id] {
+                let head = u.moves[i as usize].d.t + 1;
+                if best.map_or(true, |(_, bh)| head < bh) {
+                    best = Some((a, head));
+                }
+            }
+        }
+        if let Some((a, _)) = best {
+            let mut restr: Vec<Option<AxisSet>> = vec![None; u.axes.len()];
+            let mut s = AxisSet::empty(slice_sizes[a]);
+            s.insert(point[a]);
+            restr[a] = Some(s);
+            cleanup(p, arena, &mut undos);
+            return Problem::Slice(Slice { restr });
+        }
+    }
     let (att, king) = list[0];
     let slice = check_slice(p, u, hc, point, &owner, att, king, &slice_sizes);
     cleanup(p, arena, &mut undos);
@@ -774,6 +817,13 @@ fn check_slice(
             } else {
                 s.insert(id);
             }
+        }
+        //The chosen semimove must ride in its own slice; when the filter
+        //would exclude it (e.g. the point's own branch), pin the axis to
+        //exactly the choice instead of falling back to a one-point slice.
+        if restricted && !s.contains(point[a]) {
+            s = AxisSet::empty(sizes[a]);
+            s.insert(point[a]);
         }
         if restricted {
             restr[a] = Some(s);

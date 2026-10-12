@@ -1,0 +1,13 @@
+diff --git a/src/core/multiverse.cpp b/src/core/multiverse.cpp
+index 73a91b4..a78f9e8 100644
+--- a/src/core/multiverse.cpp
++++ b/src/core/multiverse.cpp
+@@ -951,7 +951,7 @@ movegen_t multiverse::gen_moves_impl(vec4 p) const &
+             if(bb)
+             {
+                 // unmoved pawn movement
+-                if constexpr(P == PAWN_UW || P == BRAWN_UW)
++                if constexpr(P == PAWN_UB || P == BRAWN_UB)
+                 {
+                     vec4 r = q + vec4(0,0,0,1);
+                     if(inbound(r,C))

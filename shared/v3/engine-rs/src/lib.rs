@@ -16,6 +16,8 @@ use std::collections::HashSet;
 use std::hash::{BuildHasherDefault, Hasher};
 use std::rc::Rc;
 
+pub mod hypercuboid;
+
 #[cfg(target_arch = "wasm32")]
 #[link(wasm_import_module = "env")]
 extern "C" {

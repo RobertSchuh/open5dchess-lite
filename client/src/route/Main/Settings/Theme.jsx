@@ -15,6 +15,7 @@ import Grid from '@material-ui/core/Grid';
 import InputLabel from '@material-ui/core/InputLabel';
 import LinearProgress from '@material-ui/core/LinearProgress';
 import Paper from '@material-ui/core/Paper';
+import MenuItem from '@material-ui/core/MenuItem';
 import Select from '@material-ui/core/Select';
 import Switch from '@material-ui/core/Switch';
 import Toolbar from '@material-ui/core/Toolbar';
@@ -33,6 +34,7 @@ import ViewMenu from 'components/Player/ViewMenu';
 
 import EmitterContext from 'utils/EmitterContext';
 import * as muiTheme from 'state/theme';
+import * as crConfig from 'state/config';
 
 import deepmerge from 'deepmerge';
 import deepequal from 'fast-deep-equal';
@@ -256,6 +258,50 @@ export default class Theme extends React.Component {
             </Grid>
           </Grid>
           <Grid item xs={12} md={4}>
+            <Accordion
+              expanded={this.state.section === 'rendering' && this.state.showSection}
+              onChange={() => {
+                this.setState({ section: 'rendering', showSection: this.state.section !== 'rendering' ? true : !this.state.showSection });
+              }}
+              elevation={0}
+              style={{ margin: 0 }}
+              square={false}
+              TransitionProps={{ unmountOnExit: true }}
+            >
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant='h5'><Trans>Rendering</Trans></Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} sm={6} md={12} lg={6}>
+                    <FormControl variant='outlined' fullWidth>
+                      <InputLabel><Trans>Render scale</Trans></InputLabel>
+                      <Select
+                        value={crConfig.get().app.resolution || 0}
+                        onChange={(event) => {
+                          crConfig.set({ app: { resolution: event.target.value } }, this.context);
+                          this.setState({});
+                        }}
+                        label={<Trans>Render scale</Trans>}
+                      >
+                        <MenuItem value={0}><Trans>Auto (device pixel ratio)</Trans></MenuItem>
+                        <MenuItem value={1}>1x</MenuItem>
+                        <MenuItem value={1.5}>1.5x</MenuItem>
+                        <MenuItem value={2}>2x</MenuItem>
+                        <MenuItem value={3}>3x</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12}>
+                    <Typography variant='caption' color='textSecondary'>
+                      <Trans>If the board looks blurry or pixelated, your browser may hide its real pixel density (privacy setting): pick 2x or 3x. Takes effect after a reload.</Trans>
+                    </Typography>
+                  </Grid>
+                </Grid>
+              </AccordionDetails>
+            </Accordion>
+          </Grid>
+          <Grid item xs={12}>
             <Accordion
               expanded={this.state.section === 'typography' && this.state.showSection}
               onChange={() => {

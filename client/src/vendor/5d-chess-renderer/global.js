@@ -42,6 +42,12 @@ class Global {
     //Debug manager
     this.debug = new Debug();
 
+    //Filters (the arrows' AlphaFilter) rasterize into intermediate textures
+    //at FILTER_RESOLUTION, which defaults to 1: arrows came out pixelated on
+    //every HiDPI screen no matter the canvas resolution.
+    this.PIXI.settings.FILTER_RESOLUTION =
+      this.configStore.get('app').resolution || Math.max(window.devicePixelRatio || 1, 1);
+
     //Create PIXI app
     this.app = new this.PIXI.Application({
       sharedLoader: false,
@@ -54,8 +60,9 @@ class Global {
       powerPreference: 'high-performance',
       //Render at the device's full pixel density; without this, phones
       //(DPR 2-3.5) upscale a low-res canvas and the whole zoomable area
-      //looks soft, especially zoomed out.
-      resolution: Math.max(window.devicePixelRatio || 1, 1),
+      //looks soft, especially zoomed out. app.resolution config overrides
+      //(privacy modes spoof devicePixelRatio to 1).
+      resolution: this.configStore.get('app').resolution || Math.max(window.devicePixelRatio || 1, 1),
       autoDensity: true,
     });
     this.app.renderer.plugins.interaction.moveWhenInside = true;

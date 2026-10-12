@@ -5,6 +5,8 @@ class Config {
   constructor(customConfig = null) {
     this.config = {
       app: {
+        resolution: 0,                        //Render scale: 0 = auto (devicePixelRatio). Set 2-3 manually if the browser spoofs devicePixelRatio (privacy modes).
+                                              //This option will only be used on creation (reload to apply).
         height: 600,                          //This option will only be used on creation, updating this value will not resize the renderer
                                               //Use this for when not attaching the canvas element to a HTMLElement (server-side, headless, etc.). No need to change if used normally.
         width: 800,                           //This option will only be used on creation, updating this value will not resize the renderer

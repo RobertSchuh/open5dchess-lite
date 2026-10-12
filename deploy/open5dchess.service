@@ -14,8 +14,9 @@ Environment=ANALYSIS_WORKERS=1
 Environment=ENGINE_V3=1
 # Shorter inline mate-check budget: the Pi CPU is ~6x slower than the dev PC.
 Environment=END_QUICK_MS=150
-# Full mate-search budget (worker pool); zy-class proofs need ~15-35s on the Pi
-Environment=END_SEARCH_MS=60000
+# Full mate-search budget (worker pool); the zy-class mate proof measures 107s
+# on the Pi 3B, so the game ends ~2min after the mate exists (async verdict)
+Environment=END_SEARCH_MS=150000
 # Set to the public origin (e.g. the Funnel URL) so invite links are correct
 # behind the proxy. Drop-in override: /etc/systemd/system/open5dchess.service.d/
 Environment=PUBLIC_URL=

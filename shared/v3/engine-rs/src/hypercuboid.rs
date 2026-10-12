@@ -234,6 +234,621 @@ pub fn find_matching(adj: &[Vec<usize>], required: &[bool]) -> Option<Vec<usize>
     }
 }
 
+//=== Universe over engine moves ===============================================
+use crate::{
+    apply, checks, gen_moves, now_ms, pos_exists, present_timelines, ray_vec,
+    timeline_move, undo, Arena, Mv, Pos, P4, NO, TIMEOUT, YES,
+};
+
+/// One semimove. `u32` ids index `Universe::moves`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Sm {
+    Null,
+    Physical(u32),
+    /// A piece leaves this square (landing info lives in the matched arrival)
+    Departure(P4),
+    /// Non-branching jump landing on this axis's latest board
+    Arrival(u32),
+    /// Branching jump creating this (new-timeline) axis
+    Branch(u32),
+}
+
+pub(crate) struct Axis {
+    /// Some(l): the playable timeline this axis moves; None: a new timeline
+    pub tl: Option<usize>,
+    pub present: bool, //playable and at the present when the universe was built
+    pub sms: Vec<Sm>,
+}
+
+pub(crate) struct Universe {
+    pub moves: Vec<Mv>,
+    pub axes: Vec<Axis>,
+}
+
+fn is_branching(p: &Pos, m: &Mv) -> bool {
+    //non-physical jump whose destination board is not the latest of its timeline
+    if m.d.l == m.s.l && m.d.t == m.s.t {
+        return false;
+    }
+    let tl = p.tls[m.d.l as usize].as_ref().unwrap();
+    (tl.len() - 1) as i32 != m.d.t
+}
+
+pub(crate) fn build_universe(p: &Pos, arena: &mut Arena) -> Universe {
+    let mut moves: Vec<Mv> = Vec::new();
+    gen_moves(p, arena, &mut moves);
+    let parity = (p.action % 2) as usize;
+
+    //Playable axes: every timeline whose latest board awaits the player
+    let mut axis_of_tl: Vec<Option<usize>> = vec![None; p.tls.len()];
+    let mut axes: Vec<Axis> = Vec::new();
+    let mut present0: Vec<usize> = Vec::new();
+    present_timelines(p, &mut present0);
+    for l in 0..p.tls.len() {
+        let tl = match &p.tls[l] {
+            Some(tl) => tl,
+            None => continue,
+        };
+        let t = tl.len() - 1;
+        if t % 2 != parity || tl[t] < 0 {
+            continue;
+        }
+        axis_of_tl[l] = Some(axes.len());
+        axes.push(Axis { tl: Some(l), present: present0.contains(&l), sms: vec![Sm::Null] });
+    }
+
+    //Classify moves; collect branching ids and sources with a branching move
+    let mut branching: Vec<u32> = Vec::new();
+    let mut branch_sources: Vec<bool> = vec![false; axes.len()];
+    for (i, m) in moves.iter().enumerate() {
+        let src_axis = match axis_of_tl[m.s.l as usize] {
+            Some(a) => a,
+            None => continue,
+        };
+        if m.d.l == m.s.l && m.d.t == m.s.t {
+            axes[src_axis].sms.push(Sm::Physical(i as u32));
+            continue;
+        }
+        //jump: record the (deduplicated) departure on the source axis
+        let dep_known = axes[src_axis].sms.iter().any(|s| match s {
+            Sm::Departure(d) => *d == m.s,
+            _ => false,
+        });
+        if !dep_known {
+            axes[src_axis].sms.push(Sm::Departure(m.s));
+        }
+        if is_branching(p, m) {
+            branching.push(i as u32);
+            branch_sources[src_axis] = true;
+        } else {
+            let dest_axis = axis_of_tl[m.d.l as usize]
+                .expect("non-branching jump lands on a playable latest board");
+            axes[dest_axis].sms.push(Sm::Arrival(i as u32));
+        }
+    }
+
+    //One new-timeline axis per playable board that can branch away
+    let k = branch_sources.iter().filter(|&&b| b).count();
+    for _ in 0..k {
+        let mut sms: Vec<Sm> = Vec::with_capacity(branching.len() + 1);
+        sms.push(Sm::Null);
+        for &i in &branching {
+            sms.push(Sm::Branch(i));
+        }
+        axes.push(Axis { tl: None, present: false, sms });
+    }
+    Universe { moves, axes }
+}
+
+pub(crate) fn full_hypercuboid(u: &Universe) -> Hypercuboid {
+    Hypercuboid { axes: u.axes.iter().map(|a| AxisSet::full(a.sms.len())).collect() }
+}
+
+//=== Take a point =============================================================
+
+/// Pick one semimove id per axis, consistent in the matching sense: every
+/// chosen departure pairs with exactly one chosen arrival/branch and
+/// vice-versa. Returns None when the hypercuboid cannot host such a point
+/// (axes forced to jumps with no feasible pairing).
+pub(crate) fn take_point(u: &Universe, hc: &Hypercuboid) -> Option<Vec<usize>> {
+    let n = u.axes.len();
+    //Independent (jump-free) fallback per axis, preferring progress on
+    //present boards and quiet on everything else.
+    let mut fallback: Vec<Option<usize>> = vec![None; n];
+    for (a, axis) in u.axes.iter().enumerate() {
+        let mut null_id = None;
+        let mut phys_id = None;
+        for id in hc.axes[a].iter() {
+            match axis.sms[id] {
+                Sm::Null if null_id.is_none() => null_id = Some(id),
+                Sm::Physical(_) if phys_id.is_none() => phys_id = Some(id),
+                _ => {}
+            }
+        }
+        fallback[a] = if axis.present { phys_id.or(null_id) } else { null_id.or(phys_id) };
+    }
+    let required: Vec<bool> = fallback.iter().map(|f| f.is_none()).collect();
+    if required.iter().all(|&r| !r) {
+        return Some(fallback.into_iter().map(|f| f.unwrap()).collect());
+    }
+
+    //Pair graph: departure axis <-> axis holding a matching arrival/branch
+    let mv_of = |a: usize, id: usize| -> Option<&Mv> {
+        match u.axes[a].sms[id] {
+            Sm::Arrival(i) | Sm::Branch(i) => Some(&u.moves[i as usize]),
+            _ => None,
+        }
+    };
+    let dep_allowed = |a: usize, s: P4| -> Option<usize> {
+        hc.axes[a].iter().find(|&id| matches!(u.axes[a].sms[id], Sm::Departure(d) if d == s))
+    };
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for b in 0..n {
+        for id in hc.axes[b].iter() {
+            if let Some(m) = mv_of(b, id) {
+                if let Some(sa) = u.axes.iter().position(|ax| ax.tl == Some(m.s.l as usize)) {
+                    if sa != b && dep_allowed(sa, m.s).is_some() && !adj[b].contains(&sa) {
+                        adj[b].push(sa);
+                        adj[sa].push(b);
+                    }
+                }
+            }
+        }
+    }
+    let mate = find_matching(&adj, &required)?;
+
+    //Concrete semimoves for matched pairs; fallback elsewhere
+    let mut point: Vec<usize> = vec![usize::MAX; n];
+    for b in 0..n {
+        if mate[b] == usize::MAX || point[b] != usize::MAX {
+            continue;
+        }
+        let a = mate[b];
+        //one of (a, b) holds the arrival; find a concrete pair
+        let mut place = |arr_axis: usize, dep_axis: usize| -> bool {
+            for id in hc.axes[arr_axis].iter() {
+                if let Some(m) = mv_of(arr_axis, id) {
+                    if m.s.l as usize == u.axes[dep_axis].tl.unwrap_or(usize::MAX) {
+                        if let Some(dep_id) = dep_allowed(dep_axis, m.s) {
+                            point[arr_axis] = id;
+                            point[dep_axis] = dep_id;
+                            return true;
+                        }
+                    }
+                }
+            }
+            false
+        };
+        if !place(b, a) && !place(a, b) {
+            return None; //matching said pairable, but no concrete pair: give up
+        }
+    }
+    for a in 0..n {
+        if point[a] == usize::MAX {
+            point[a] = fallback[a]?;
+        }
+    }
+    Some(point)
+}
+
+//=== Test a point =============================================================
+
+pub(crate) enum Problem {
+    /// The point is a legal action (these are its moves, in applied order)
+    Legal(Vec<Mv>),
+    /// A slice of invalid points containing this point (or not: see `contains`)
+    Slice(Slice),
+}
+
+/// Which axis produced the post-action board (l, t)? Boards older than the
+/// action are immutable (None).
+struct BoardOwner {
+    //(timeline, turn) -> axis, for boards created by the applied moves
+    map: Vec<(i32, i32, usize)>,
+}
+impl BoardOwner {
+    fn get(&self, l: i32, t: i32) -> Option<usize> {
+        self.map.iter().find(|&&(ol, ot, _)| ol == l && ot == t).map(|&(_, _, a)| a)
+    }
+}
+
+/// Apply the point, diagnose it, and undo everything. Sound slices only:
+/// every point inside a returned slice is invalid.
+pub(crate) fn test_point(
+    p: &mut Pos,
+    arena: &mut Arena,
+    u: &Universe,
+    hc: &Hypercuboid,
+    point: &[usize],
+) -> Problem {
+    #[derive(Clone, Copy, PartialEq)]
+    enum Want {
+        Phys,
+        Push,
+        Branch,
+    }
+    //Gather the moves to apply with their designation
+    let mut todo: Vec<(usize, Want, Mv)> = Vec::new();
+    for (a, &id) in point.iter().enumerate() {
+        match u.axes[a].sms[id] {
+            Sm::Physical(i) => todo.push((a, Want::Phys, u.moves[i as usize])),
+            Sm::Arrival(i) => todo.push((a, Want::Push, u.moves[i as usize])),
+            Sm::Branch(i) => todo.push((a, Want::Branch, u.moves[i as usize])),
+            Sm::Null | Sm::Departure(_) => {}
+        }
+    }
+
+    let mut undos: Vec<crate::Undo> = Vec::new();
+    let mut owner = BoardOwner { map: Vec::new() };
+    let mut done = vec![false; todo.len()];
+    let mut n_done = 0;
+    let slice_sizes: Vec<usize> = u.axes.iter().map(|a| a.sms.len()).collect();
+    let cleanup = |p: &mut Pos, arena: &mut Arena, undos: &mut Vec<crate::Undo>| {
+        while let Some(op) = undos.pop() {
+            undo(p, arena, op);
+        }
+    };
+
+    while n_done < todo.len() {
+        let mut progressed = false;
+        for ti in 0..todo.len() {
+            if done[ti] {
+                continue;
+            }
+            let (axis, want, m) = todo[ti];
+            let src_latest = p.tls[m.s.l as usize].as_ref().map(|tl| (tl.len() - 1) as i32);
+            if src_latest != Some(m.s.t) {
+                continue; //source not ready (or consumed: then we stall below)
+            }
+            let dest_latest = p.tls[m.d.l as usize].as_ref().map(|tl| (tl.len() - 1) as i32);
+            let ok = match want {
+                Want::Phys => true,
+                Want::Push => dest_latest == Some(m.d.t),
+                Want::Branch => dest_latest != Some(m.d.t),
+            };
+            if !ok {
+                continue;
+            }
+            let op = apply(p, arena, &m);
+            //record who owns the boards this apply created
+            owner.map.push((m.s.l, m.s.t + 1, axis));
+            match want {
+                Want::Phys => {}
+                Want::Push => {
+                    let dest_axis = u
+                        .axes
+                        .iter()
+                        .position(|ax| ax.tl == Some(m.d.l as usize))
+                        .unwrap_or(axis);
+                    owner.map.push((m.d.l, m.d.t + 1, dest_axis));
+                }
+                Want::Branch => {
+                    //the new timeline's only board belongs to the new axis
+                    if let crate::Op::NewTl { slot, .. } = op.a {
+                        owner.map.push((slot as i32, m.d.t + 1, axis));
+                    }
+                }
+            }
+            undos.push(op);
+            done[ti] = true;
+            n_done += 1;
+            progressed = true;
+        }
+        if !progressed {
+            //Stuck. The classic case: a Branch designated at a playable board
+            //that stays latest because its own axis chose Null.
+            for ti in 0..todo.len() {
+                if done[ti] {
+                    continue;
+                }
+                let (axis, want, m) = todo[ti];
+                if want == Want::Branch {
+                    if let Some(b_axis) = u.axes.iter().position(|ax| ax.tl == Some(m.d.l as usize)) {
+                        if matches!(u.axes[b_axis].sms[point[b_axis]], Sm::Null) {
+                            let mut restr: Vec<Option<AxisSet>> = vec![None; u.axes.len()];
+                            let mut sb = AxisSet::empty(slice_sizes[b_axis]);
+                            sb.insert(point[b_axis]);
+                            restr[b_axis] = Some(sb);
+                            let mut sa = AxisSet::empty(slice_sizes[axis]);
+                            sa.insert(point[axis]);
+                            restr[axis] = Some(sa);
+                            cleanup(p, arena, &mut undos);
+                            return Problem::Slice(Slice { restr });
+                        }
+                    }
+                }
+            }
+            //Unknown conflict: banish exactly this point
+            cleanup(p, arena, &mut undos);
+            return Problem::Slice(point_slice(point, &slice_sizes));
+        }
+    }
+
+    //Present test: did the action advance the present?
+    let mut present: Vec<usize> = Vec::new();
+    present_timelines(p, &mut present);
+    if !present.is_empty() {
+        //every still-present board's axis chose Null (anything else moves it)
+        let b_l = present[0];
+        let b_axis = u.axes.iter().position(|ax| ax.tl == Some(b_l)).unwrap();
+        let t_b = (p.tls[b_l].as_ref().unwrap().len() - 1) as i32;
+        let mut restr: Vec<Option<AxisSet>> = vec![None; u.axes.len()];
+        for (a, axis) in u.axes.iter().enumerate() {
+            if a == b_axis {
+                let mut s = AxisSet::empty(slice_sizes[a]);
+                s.insert(point[a]);
+                restr[a] = Some(s);
+                continue;
+            }
+            //Keep (= exclude from the slice) any branch into the strict past
+            //of B: it could shift the present below B and legalize the point.
+            let mut s = AxisSet::empty(slice_sizes[a]);
+            let mut restricted = false;
+            for id in 0..slice_sizes[a] {
+                let keep_out = match axis.sms[id] {
+                    Sm::Branch(i) => u.moves[i as usize].d.t < t_b,
+                    _ => false,
+                };
+                if keep_out {
+                    restricted = true;
+                } else {
+                    s.insert(id);
+                }
+            }
+            if restricted {
+                restr[a] = Some(s);
+            }
+        }
+        cleanup(p, arena, &mut undos);
+        let slice = Slice { restr };
+        return Problem::Slice(ensure_contains(slice, point, &slice_sizes));
+    }
+
+    //Check test
+    let mut list: Vec<(P4, P4)> = Vec::new();
+    checks(p, arena, false, &mut list, &present);
+    if list.is_empty() {
+        let action: Vec<Mv> = todo.iter().map(|&(_, _, m)| m).collect();
+        cleanup(p, arena, &mut undos);
+        return Problem::Legal(action);
+    }
+    let (att, king) = list[0];
+    let slice = check_slice(p, u, hc, point, &owner, att, king, &slice_sizes);
+    cleanup(p, arena, &mut undos);
+    Problem::Slice(ensure_contains(slice, point, &slice_sizes))
+}
+
+fn point_slice(point: &[usize], sizes: &[usize]) -> Slice {
+    Slice {
+        restr: point
+            .iter()
+            .zip(sizes)
+            .map(|(&id, &n)| {
+                let mut s = AxisSet::empty(n);
+                s.insert(id);
+                Some(s)
+            })
+            .collect(),
+    }
+}
+
+/// Slices must contain the point they were derived from, or the search could
+/// loop. When a conservative exclusion dropped the point itself, fall back to
+/// banishing exactly the point.
+fn ensure_contains(slice: Slice, point: &[usize], sizes: &[usize]) -> Slice {
+    let inside = slice.restr.iter().enumerate().all(|(a, r)| match r {
+        None => true,
+        Some(s) => s.contains(point[a]),
+    });
+    if inside {
+        slice
+    } else {
+        point_slice(point, sizes)
+    }
+}
+
+/// The check `att -> king` survives for every point that keeps the involved
+/// boards identical and neither blocks the path, captures the checker,
+/// interferes at the king's square, nor branches (branches can shift the
+/// present and void checks, so they are conservatively kept in the space).
+fn check_slice(
+    p: &Pos,
+    u: &Universe,
+    hc: &Hypercuboid,
+    point: &[usize],
+    owner: &BoardOwner,
+    att: P4,
+    king: P4,
+    sizes: &[usize],
+) -> Slice {
+    let n = u.axes.len();
+    let mut exact: Vec<bool> = vec![false; n];
+    if let Some(a) = owner.get(att.l, att.t) {
+        exact[a] = true;
+    }
+    if let Some(a) = owner.get(king.l, king.t) {
+        exact[a] = true;
+    }
+    //Can ANY branch combination of sibling points void this check? Mirrors
+    //the DFS act_void scan (lib.rs can_complete), with the activation window
+    //widened by the number of branches an action could make. NOTE: p is the
+    //post-action position here, which contains the tested point's branches —
+    //a superset of every sibling's timelines, so the scan is conservative.
+    let k_branches = u.axes.iter().filter(|a| a.tl.is_none()).count() as usize;
+    let act_parity = (p.action % 2) as i32;
+    let (mut fam_odd, mut fam_even) = (0usize, 0usize);
+    for l in 0..p.tls.len() {
+        if p.tls[l].is_none() {
+            continue;
+        }
+        if fam_odd < l && l % 2 != 0 {
+            fam_odd = l;
+        }
+        if fam_even < l && l % 2 == 0 {
+            fam_even = l;
+        }
+    }
+    let mut act_void = false;
+    for l in 0..p.tls.len() {
+        let tl = match &p.tls[l] {
+            Some(tl) => tl,
+            None => continue,
+        };
+        let active = (fam_even + 1 >= l && l % 2 != 0) || (fam_odd + 3 >= l && l % 2 == 0);
+        let near = (fam_even + 1 + 2 * k_branches >= l && l % 2 != 0)
+            || (fam_odd + 3 + 2 * k_branches >= l && l % 2 == 0);
+        if !active && near && (tl.len() as i32 - 1) <= att.t + 1 {
+            act_void = true;
+            break;
+        }
+    }
+    //a branch that cannot shift the present behind the checker and whose new
+    //head is not ours cannot touch the check: safe to remove with the slice
+    let branch_is_inert = |m: &Mv| -> bool {
+        !act_void && m.d.t > att.t && (m.d.t + 1).rem_euclid(2) != act_parity
+    };
+    //Crossing squares of the checking ray on boards the action produced
+    let mut crossing: Vec<(usize, i32, i32)> = Vec::new(); //(axis, r, f)
+    if let Some((lm, tm, rm, fm, steps)) = ray_vec(p, att, king) {
+        let mut cur = att;
+        for _ in 1..steps {
+            cur = P4 {
+                l: if lm == 0 { cur.l } else { timeline_move(cur.l, lm, p.is_even) },
+                t: cur.t + tm,
+                r: cur.r + rm,
+                f: cur.f + fm,
+            };
+            if !pos_exists(p, cur) {
+                continue;
+            }
+            if let Some(a) = owner.get(cur.l, cur.t) {
+                if !exact[a] {
+                    crossing.push((a, cur.r, cur.f));
+                }
+            }
+        }
+    }
+
+    let mut restr: Vec<Option<AxisSet>> = vec![None; n];
+    for a in 0..n {
+        if exact[a] {
+            let mut s = AxisSet::empty(sizes[a]);
+            s.insert(point[a]);
+            restr[a] = Some(s);
+            continue;
+        }
+        let mut s = AxisSet::empty(sizes[a]);
+        let mut restricted = false;
+        for id in 0..sizes[a] {
+            let on_crossing = crossing.iter().any(|&(ca, _, _)| ca == a);
+            let keep_out = match u.axes[a].sms[id] {
+                //a branch may void the check by shifting the present, unless
+                //the void/enable analysis proves it inert
+                Sm::Branch(i) => !branch_is_inert(&u.moves[i as usize]),
+                Sm::Physical(i) | Sm::Arrival(i) => {
+                    let m = &u.moves[i as usize];
+                    let d = m.d;
+                    //anything that rewrites the attacker's or the king's
+                    //timeline can change which board the check is read from
+                    d.l == att.l || d.l == king.l
+                        //blocks the path on this axis's board?
+                        || crossing.iter().any(|&(ca, cr, cf)| ca == a && d.r == cr && d.f == cf)
+                        //castle/en-passant touch extra squares the d-filter
+                        //cannot see: keep them out wholesale
+                        || !matches!(m.extra, crate::Extra::None)
+                }
+                Sm::Departure(d) => {
+                    //a departure removes a piece (cannot close the checking
+                    //path) and its landing is filtered on the arrival's axis —
+                    //but it still pushes a new board on ITS timeline, which
+                    //matters when that timeline is the attacker's or king's
+                    d.l == att.l || d.l == king.l
+                }
+                //the checking ray was read through a board this axis's chosen
+                //semimove created; a sibling that does not create it may break
+                //the ray, so Null cannot ride in the slice on crossing axes
+                Sm::Null => on_crossing,
+            };
+            if keep_out {
+                restricted = true;
+            } else {
+                s.insert(id);
+            }
+        }
+        if restricted {
+            restr[a] = Some(s);
+        }
+    }
+    //hc is only used to size diagnostics today
+    let _ = hc;
+    Slice { restr }
+}
+
+//=== Search ===================================================================
+
+#[derive(Default)]
+pub struct HcStats {
+    pub iters: u64,
+    pub max_space: usize,
+    pub axes: usize,
+    pub volume_log2: f64,
+}
+
+/// Hypercuboid legal-action search: YES / NO / TIMEOUT. `deadline` in ms epoch.
+pub(crate) fn has_legal_hc(p: &mut Pos, arena: &mut Arena, deadline: f64, st: &mut HcStats) -> u8 {
+    let mut present0: Vec<usize> = Vec::new();
+    present_timelines(p, &mut present0);
+    if present0.is_empty() {
+        let mut list: Vec<(P4, P4)> = Vec::new();
+        checks(p, arena, false, &mut list, &present0);
+        return if list.is_empty() { YES } else { NO };
+    }
+    let u = build_universe(p, arena);
+    let mut space: Vec<Hypercuboid> = vec![full_hypercuboid(&u)];
+    st.axes = u.axes.len();
+    st.volume_log2 = space[0].volume_log2();
+    while let Some(hc) = space.pop() {
+        if hc.is_empty() {
+            continue;
+        }
+        st.iters += 1;
+        if st.iters % 64 == 0 && now_ms() > deadline {
+            return TIMEOUT;
+        }
+        let point = match take_point(&u, &hc) {
+            Some(pt) => pt,
+            None => continue, //no consistent point lives in this hypercuboid
+        };
+        match test_point(p, arena, &u, &hc, &point) {
+            Problem::Legal(_action) => return YES,
+            Problem::Slice(slice) => {
+                space.extend(remove_slice(&hc, &slice));
+                st.max_space = st.max_space.max(space.len());
+            }
+        }
+    }
+    NO
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn profile_has_legal_hc(buf: &[i32], budget_ms: f64) {
+    let (mut p, mut arena) = crate::parse(buf);
+    let t0 = std::time::Instant::now();
+    let mut st = HcStats::default();
+    let r = has_legal_hc(&mut p, &mut arena, now_ms() + budget_ms, &mut st);
+    println!(
+        "hc_has_legal = {} ({}) in {:.3}s | axes {} vol 2^{:.0} | iters {} max_space {} | arena boards {}",
+        r as i32,
+        ["YES", "NO", "TIMEOUT"][r as usize],
+        t0.elapsed().as_secs_f64(),
+        st.axes,
+        st.volume_log2,
+        st.iters,
+        st.max_space,
+        arena.boards.len(),
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

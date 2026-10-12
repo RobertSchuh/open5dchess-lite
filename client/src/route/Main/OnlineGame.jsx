@@ -173,9 +173,11 @@ class OnlineGame extends React.Component {
     }
     return (
       <Paper elevation={2} style={barStyle}>
-        <Box px={1} py={0.5} display='flex' alignItems='center' flexWrap='wrap' justifyContent='flex-end' style={{ gap: 8 }}>
-          {dot}
-          <Typography variant='body2' style={{ fontWeight: 600 }}>{text}</Typography>
+        <Box px={1} py={0.5} display='flex' alignItems='center' flexWrap='wrap' justifyContent='space-between' style={{ gap: 8 }}>
+          <Box display='flex' alignItems='center' style={{ gap: 8 }}>
+            {dot}
+            <Typography variant='body2' style={{ fontWeight: 600 }}>{text}</Typography>
+          </Box>
           <ButtonGroup size='small'>
             {isPlayer && game.result ?
               <Button color='primary' variant='contained' onClick={() => this.manager.rematch()}>

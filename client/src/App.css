@@ -34,3 +34,9 @@ code {
 .react-grid-item {
   z-index: 20;
 }
+/* The player toolbar can hold up to 9 buttons: let them shrink on phones */
+.player-menu-group .MuiButton-root {
+  min-width: 0;
+  padding-left: 6px;
+  padding-right: 6px;
+}

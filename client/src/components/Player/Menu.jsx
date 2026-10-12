@@ -203,7 +203,7 @@ export default class Menu extends React.Component {
     }
     return (
       <Box p={1} style={{ height: '100%' }}>
-        <ButtonGroup className={PIXI.utils.isMobile.any ? 'RGL-Drag-Cancel' : ''} fullWidth style={{ height: '100%' }}>
+        <ButtonGroup className={'player-menu-group' + (PIXI.utils.isMobile.any ? ' RGL-Drag-Cancel' : '')} fullWidth style={{ height: '100%' }}>
           {availableButtons}
         </ButtonGroup>
       </Box>

@@ -52,10 +52,10 @@ class Global {
       forceCanvas: this.configStore.get('app').forceCanvas,
       backgroundAlpha: this.configStore.get('app').backgroundAlpha,
       powerPreference: 'high-performance',
-      //Render at the device's pixel density; without this, phones (DPR 2-3)
-      //upscale a 1x canvas and arrows/lines come out pixelated. Capped at 2:
-      //past that the sharpness gain is invisible but the fill cost is not.
-      resolution: Math.min(Math.max(window.devicePixelRatio || 1, 1), 2),
+      //Render at the device's full pixel density; without this, phones
+      //(DPR 2-3.5) upscale a low-res canvas and the whole zoomable area
+      //looks soft, especially zoomed out.
+      resolution: Math.max(window.devicePixelRatio || 1, 1),
       autoDensity: true,
     });
     this.app.renderer.plugins.interaction.moveWhenInside = true;

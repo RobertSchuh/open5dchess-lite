@@ -103,7 +103,8 @@ export default class Player extends React.Component {
       showStatus: true,
       showClock: true,
       showTutorial: true,
-      showNotation: true,
+      //phones: the notation strip covers too much board by default
+      showNotation: !(window.matchMedia && window.matchMedia('(pointer: coarse)').matches),
       showAnalyze: true,
       showDraw: false,
       showSettings: false,

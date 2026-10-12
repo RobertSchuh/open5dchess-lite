@@ -9,6 +9,10 @@ import 'react-resizable/css/styles.css';
 
 import deepcopy from 'deepcopy';
 import store from 'store';
+//Coarse pointers (phones/tablets) get fixed default layouts: finger drags on
+//the panel grid were rearranging panels by accident, and the result persisted.
+const COARSE = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+
 export default class Layout extends React.Component {
   static contextType = EmitterContext;
   lastUserChange = 0;
@@ -139,22 +143,22 @@ export default class Layout extends React.Component {
       xxs: [
         {i: 'menu', x: 0, y: 0, w: 12, h: 1},
         {i: 'clock', x: 7, y: -4, w: 5, h: 1},
-        {i: 'analyze', x: 0, y: -4, w: 7, h: 1},
+        {i: 'analyze', x: 0, y: 1, w: 7, h: 1},
         {i: 'tutorial', x: 0, y: 1, w: 12, h: 3},
         {i: 'draw', x: 0, y: 1, w: 12, h: 1},
         {i: 'settings', x: 0, y: 2, w: 6, h: 3},
-        {i: 'status', x: 7, y: -3, w: 5, h: 1},
-        {i: 'notation', x: 0, y: -3, w: 7, h: 3},
-        {i: 'view', x: 7, y: -2, w: 5, h: 1},
+        {i: 'status', x: 0, y: -3, w: 12, h: 2},
+        {i: 'notation', x: 0, y: -5, w: 12, h: 2},
+        {i: 'view', x: 0, y: -1, w: 7, h: 1},
         {i: 'submit', x: 7, y: -1, w: 5, h: 1},
       ],
     };
   }
   layouts() {
-    if(this.state && this.state.wideMode && typeof store.get('player/layouts/wide') === 'object') {
+    if(!COARSE && this.state && this.state.wideMode && typeof store.get('player/layouts/wide') === 'object') {
       return this.transformLayout(store.get('player/layouts/wide'));
     }
-    else if(typeof store.get('player/layouts/tall') === 'object') {
+    else if(!COARSE && !(this.state && this.state.wideMode) && typeof store.get('player/layouts/tall') === 'object') {
       return this.transformLayout(store.get('player/layouts/tall'));
     }
     return this.transformLayout(this.defaultLayout());
@@ -332,6 +336,8 @@ export default class Layout extends React.Component {
         <ResponsiveGridLayout
           width={this.state.triggerUpdate > 1 ? this.state.width * 0.999 : this.state.width}
           autoSize
+          isDraggable={!COARSE}
+          isResizable={!COARSE}
           preventCollision
           draggableCancel='.RGL-Drag-Cancel'
           breakpoints={{lg: 1200, md: 990, sm: 760, xs: 480, xxs: 0}}

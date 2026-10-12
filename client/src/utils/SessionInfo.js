@@ -1,5 +1,8 @@
 import * as authStore from 'state/auth';
-import * as users from 'network/users';
+//The account server is gone: user lookups only happened for hosted sessions
+//(isServer), which the lite fork never creates. Empty stubs keep the dead
+//branches inert.
+const users = { get: async () => [], getOne: async () => null };
 
 export const getInfo = async (session) => {
   let isServer = typeof session.host !== 'undefined';

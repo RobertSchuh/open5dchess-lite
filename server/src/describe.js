@@ -2,7 +2,8 @@
 // as a grid, and what the opponent threatens. Used by the text endpoints
 // (and so by the MCP server), so any agent gets the same information.
 import { createRequire } from 'node:module';
-import { hasLegalAction, trimState } from '../../shared/legalMoves.js';
+import { trimState } from '../../shared/trimState.js';
+import { hasLegalAction } from '../../shared/legalMovesV3.js';
 import { fixPawnCaptures } from '../../shared/notation.js';
 import { Position } from '../../shared/fastPosition.js';
 import * as enginePiece from '../../shared/engine/piece.js';

@@ -1,8 +1,8 @@
-import AmbientSound from 'assets/sound/ambience.flac';
-import EndSound from 'assets/sound/end.flac';
-import PieceSound from 'assets/sound/piece.flac';
-import ReverseSound from 'assets/sound/reverse.flac';
-import SubmitSound from 'assets/sound/submit.flac';
+import AmbientSound from 'assets/sound/ambience.m4a';
+import EndSound from 'assets/sound/end.m4a';
+import PieceSound from 'assets/sound/piece.m4a';
+import ReverseSound from 'assets/sound/reverse.m4a';
+import SubmitSound from 'assets/sound/submit.m4a';
 
 import { init as initDb } from 'state/db';
 const collections = initDb();

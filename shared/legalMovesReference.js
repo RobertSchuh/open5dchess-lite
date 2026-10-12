@@ -93,10 +93,4 @@ export const hasLegalAction = (chess, budgetMs = 10000) => {
 
 //Copying a game copies its whole history, which the search doesn't need.
 //Keep only what move generation, check detection and submittable() use.
-export const trimState = (state) => {
-  return Object.assign({}, state, {
-    rawBoardHistory: state.rawBoardHistory.slice(-1),
-    rawActionHistory: [],
-    checkmateCache: [],
-  });
-}
+export { trimState } from './trimState.js';

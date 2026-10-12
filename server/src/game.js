@@ -2,9 +2,9 @@
 // an optional clock, and change notifications. Everything lives in memory.
 import { createRequire } from 'node:module';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { classifyMoves, hasLegalAction, trimState } from '../../shared/legalMoves.js';
+import { trimState } from '../../shared/trimState.js';
+import { hasLegalAction } from '../../shared/legalMovesV3.js';
 import { fixPawnCaptures } from '../../shared/notation.js';
-import { Position } from '../../shared/fastPosition.js';
 import { pool } from './analysisPool.js';
 import { threats, threatsText, timelineGrid, boardsData, renderBoard, macroGrid } from './describe.js';
 
@@ -14,8 +14,8 @@ const ChessClock = require('5d-chess-clock');
 
 export const VARIANTS = ['standard', 'defended_pawn', 'half_reflected', 'princess', 'turn_zero', 'two_timelines', 'reversed_royalty'];
 
-// Search budgets (ms). The engine's own mate search reports "mate" when it
-// times out, so the server uses shared/legalMoves.js instead.
+// Search budgets (ms). 5d-chess-js's own mate search reports "mate" when it
+// times out, so the server uses the v3 engine (hypercuboid + DFS fallback).
 // Mate detection first runs inline with the quick budget (covers almost all
 // positions and keeps results synchronous); only slow positions go to the
 // worker pool with the full budget.
@@ -191,11 +191,12 @@ export class Game {
   // too deep for the quick budget, the full search runs in the worker pool
   // and the game ends asynchronously when the verdict arrives.
   detectEnd() {
-    const probe = Position.fromChess(this.chess);
-    const quick = hasLegalAction(probe, this.endQuickMs);
+    let quick;
+    try { quick = hasLegalAction(this.chess, this.endQuickMs); }
+    catch(err) { quick = 'timeout'; } //unsupported position: the pool decides
     if(quick === 'yes') { return; }
     const loser = this.player;
-    const inCheck = probe.inCheck();
+    const inCheck = this.chess.inCheck;
     const finish = () => {
       if(this.ended) { return; }
       if(inCheck) { this.end(other(loser), 'checkmate'); }

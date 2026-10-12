@@ -7,7 +7,7 @@
 // terminated and respawned, and the job falls back to running inline.
 import { Worker } from 'node:worker_threads';
 import os from 'node:os';
-import { classifyMoves, hasLegalAction } from '../../shared/legalMoves.js';
+import { classifyMoves, hasLegalAction } from '../../shared/legalMovesV3.js';
 import { threats } from './describe.js';
 import { createRequire } from 'node:module';
 

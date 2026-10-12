@@ -23,7 +23,6 @@ import PersonIcon from '@material-ui/icons/Person';
 import VisibilityIcon from '@material-ui/icons/Visibility';
 import VisibilityOffIcon from '@material-ui/icons/VisibilityOff';
 
-import UserAvatar from 'components/UserAvatar';
 import Renderer from 'components/Player/Renderer';
 
 import moment from 'moment';
@@ -171,13 +170,13 @@ class SessionCard extends React.Component {
     let blackAvatar = null;
     if(this.state.isServer) {
       if(this.state.whiteUsername) {
-        whiteAvatar = <UserAvatar username={this.state.whiteUsername} />;
+        whiteAvatar = null;
       }
       else {
         whiteAvatar = <Avatar style={{ color: 'black', backgroundColor: 'white' }}><HelpOutlineIcon /></Avatar>;
       }
       if(this.state.blackUsername) {
-        blackAvatar = <UserAvatar username={this.state.blackUsername} />;
+        blackAvatar = null;
       }
       else {
         blackAvatar = <Avatar style={{ color: 'white', backgroundColor: 'black' }}><HelpOutlineIcon /></Avatar>;

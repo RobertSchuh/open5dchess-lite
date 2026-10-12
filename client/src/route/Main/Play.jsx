@@ -7,7 +7,6 @@ import Box from '@material-ui/core/Box';
 import CircularProgress from '@material-ui/core/CircularProgress';
 
 import Player from 'components/Player';
-import WaitModal from 'route/Main/Play/WaitModal';
 
 import SessionManager from 'state/SessionManager';
 
@@ -95,17 +94,7 @@ class Play extends React.Component {
     if(this.state.loading) {
       return (
         <>
-          {this.state.session && !this.state.session.started ? 
-            <WaitModal
-              session={this.state.session}
-              onBack={() => {
-                this.props.history.goBack();
-              }}
-            />
-          :
-            null
-          }
-          <Box display='flex'>
+                    <Box display='flex'>
             <Box mx='auto' my={5}>
               <CircularProgress
                 size={120}
@@ -131,17 +120,7 @@ class Play extends React.Component {
     }
     return (
       <>
-        {this.state.session && !this.state.session.started ? 
-          <WaitModal
-            session={this.state.session}
-            onBack={() => {
-              this.props.history.goBack();
-            }}
-          />
-        :
-          null
-        }
-        <Player
+                <Player
           board={this.state.board}
           actionHistory={this.state.actionHistory}
           moveBuffer={this.state.moveBuffer}

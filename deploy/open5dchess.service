@@ -10,8 +10,6 @@ Environment=PORT=8090
 Environment=HOST=127.0.0.1
 # Pi 3B has 1 GB RAM shared with other services: one analysis worker is enough.
 Environment=ANALYSIS_WORKERS=1
-# Rust->WASM engine (per-call fallback to the JS engine).
-Environment=ENGINE_V3=1
 # Shorter inline mate-check budget: the Pi CPU is ~6x slower than the dev PC.
 Environment=END_QUICK_MS=150
 # Full mate-search budget (worker pool); the zy-class mate proof measures 107s

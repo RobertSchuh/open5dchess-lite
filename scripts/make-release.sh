@@ -16,7 +16,9 @@ find release/client/dist -type f \( -name '*.js' -o -name '*.css' -o -name '*.ht
   -exec gzip -k -9 {} +
 cp -r server/src server/package.json server/package-lock.json release/server/
 cp -r shared release/shared
-rm -rf release/shared/v3/engine-rs/target
+rm -rf release/shared/v3/engine-rs/target release/shared/v3/engine-rs
+# The v2 JS search engine is the test oracle only; production runs v3
+rm -f release/shared/legalMoves.js release/shared/legalMovesReference.js
 cp -r deploy release/deploy
 
 commit=$(git rev-parse --short HEAD)
@@ -27,7 +29,7 @@ cat > release/RELEASE-NOTES.md <<EOF
 - Node: 24 (pure-JS deps, \`npm ci --omit=dev\` in server/)
 - Start: see deploy/README.md (systemd unit in deploy/open5dchess.service)
 - Env vars: PORT (8090), HOST (127.0.0.1), PUBLIC_URL, ANALYSIS_WORKERS,
-  ENGINE_V3 (=1 for the WASM engine), END_QUICK_MS, STATIC_DIR
+  END_QUICK_MS, END_SEARCH_MS, STATIC_DIR
 - Tests: on the PC, \`npm test\` in server/ and mcp/
 - Known: games are in-memory only (lost on restart); browser hints worker
   uses the JS engine; LLM threat analysis is 1 ply deep.

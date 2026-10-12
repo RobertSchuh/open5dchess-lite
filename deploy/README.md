@@ -76,6 +76,5 @@ The server binds to 127.0.0.1. Options:
 ## Pi-specific tuning (already in the unit)
 
 - `ANALYSIS_WORKERS=1` — 1 GB RAM shared with other services.
-- `ENGINE_V3=1` — the WASM engine offsets the slow CPU (per-call JS fallback).
 - `END_QUICK_MS=150` — shorter inline mate-check budget.
 - `MemoryMax=350M` — hard cap; systemd restarts the service if it's exceeded.

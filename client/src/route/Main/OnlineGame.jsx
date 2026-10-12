@@ -63,6 +63,7 @@ class OnlineGame extends React.Component {
           this.applyOrientation(game);
           this.setState({ barExpanded: null });
         }
+        this.touchStored(game);
         this.setState({ game: game, loading: false });
       }),
       this.manager.on('onClockUpdate', (clock) => {
@@ -76,12 +77,28 @@ class OnlineGame extends React.Component {
       }),
       this.manager.on('onConnection', (connected) => { this.setState({ connected: connected }); }),
       this.manager.on('onError', (message) => {
+        //Expired on the server: no point keeping the link around
+        if(this.manager.gone) { online.forgetGame(gameId); }
         if(this.state.game === null) { this.setState({ loading: false, error: message }); }
         else { this.props.enqueueSnackbar(message, { variant: 'warning', autoHideDuration: 2500, preventDuplicate: true }); }
       }),
     ];
     this.configListener = this.context.on('configUpdate', () => { this.manager.refreshBoard(); });
     this.manager.connect();
+  }
+  //Keep this game reopenable from the start page; expiry there mirrors the
+  //server's. Throttled: long games don't need a write per state update.
+  touchStored(game) {
+    const ended = game.result !== null;
+    if(this.lastTouch && Date.now() - this.lastTouch < 60000 && ended === this.lastTouchEnded) { return; }
+    this.lastTouch = Date.now();
+    this.lastTouchEnded = ended;
+    online.touchGame(game.id, {
+      link: window.location.href,
+      seat: game.you,
+      variant: game.variant,
+      ended,
+    });
   }
   //View the board from your own side
   applyOrientation(game) {

@@ -4,8 +4,8 @@ const defaultSettings = {
   locale: 'en',
   eruda: false,
   quickPlay: {
-    variants: ['turn_zero'],
-    formats: ['blitz', 'rapid']
+    variants: ['standard'],
+    formats: ['none']
   }
 };
 

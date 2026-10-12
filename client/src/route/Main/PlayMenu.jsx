@@ -28,12 +28,12 @@ class PlayMenu extends React.Component {
     onlineOpen: false
   };
   async onLocal() {
-    let variants = settings.get().quickPlay.variants;
-    let formats = settings.get().quickPlay.formats;
+    let quickPlay = settings.get().quickPlay;
+    let format = quickPlay.formats[0];
     let newSession = await sessions.createSession(
       false,
-      variants[0],
-      formats[0],
+      quickPlay.variants[0] || 'standard',
+      !format || format === 'none' ? null : format,
       'white',
       false,
       this.context

@@ -7,6 +7,7 @@ import Box from '@material-ui/core/Box';
 import Button from '@material-ui/core/Button';
 import Card from '@material-ui/core/Card';
 import Grid from '@material-ui/core/Grid';
+import MuiLink from '@material-ui/core/Link';
 import Typography from '@material-ui/core/Typography';
 
 import ChessClock from '5d-chess-clock';
@@ -103,6 +104,15 @@ class PlayMenu extends React.Component {
           </Grid>
           <Grid item xs={12} md={4}>
             <SessionsPanel />
+          </Grid>
+          <Grid item xs={12}>
+            <Typography variant='caption' color='textSecondary' component='div' align='center'>
+              Chess In 5D Lite is a trimmed fork of{' '}
+              <MuiLink color='inherit' underline='always' href='https://gitlab.com/alexbay218/chess-in-5d' target='_blank' rel='noopener'>Chess In 5D</MuiLink>
+              {' '}by Shaun Wu (AGPL-3.0) · inspired by{' '}
+              <MuiLink color='inherit' underline='always' href='https://www.5dchesswithmultiversetimetravel.com/' target='_blank' rel='noopener'>5D Chess With Multiverse Time Travel</MuiLink>
+              {' '}by Thunkspace
+            </Typography>
           </Grid>
         </Grid>
       </Box>

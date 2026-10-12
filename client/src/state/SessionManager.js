@@ -167,7 +167,7 @@ export default class SessionManager {
       }
     }
     else {
-      if(!this.isServer && chessClockState.lastUpdate >= 0) {
+      if(!this.isServer && this.session.timed !== null && chessClockState.lastUpdate >= 0) {
         if(chessClockState.whiteDurationLeft <= 0 && chessClockState.whiteDelayLeft <= 0) {
           await this.setSession();
           this.session.winner = 'black';
@@ -370,10 +370,16 @@ export default class SessionManager {
         this.emitter.emit('onSessionUpdate', this.session);
       }
       else if(!this.isServer) {
-        this.chessClock.stop();
+        //Untimed games have no clock to run: starting the fresh zero-duration
+        //clock here made the first submit count as a win on time
+        if(this.session.timed !== null) {
+          this.chessClock.stop();
+        }
         this.chess.submit();
-        this.chessClock.start();
-        this.chessClock.switch(this.chess.player, this.chess.board);
+        if(this.session.timed !== null) {
+          this.chessClock.start();
+          this.chessClock.switch(this.chess.player, this.chess.board);
+        }
         await this.setSession();
         this.emitter.emit('onBoardUpdate', this.getBoard(), this.session);
         this.emitter.emit('onSessionUpdate', this.session);

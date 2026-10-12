@@ -53,6 +53,23 @@ CHECK AND MATE
 - Checkmate: you have no legal turn and are in check (you lose).
   Stalemate: no legal turn but not in check (draw).
 
+HARD-EARNED TRUTHS (games have been lost to each of these)
+- Your king on a PAST board can be attacked: a queen on b7 at T15 can take a
+  king that sat on the T11 board (file+time move); a knight can attack a king
+  one turn back and two ranks over. Guard every board your king ever stood on.
+- If your king time-travels, its ORIGIN timeline continues without that king
+  (its older boards with the king remain attackable), and the destination
+  branch now holds two of your kings. Every one of them must stay safe.
+- A piece left behind on any old board stays capturable through time forever;
+  moving the piece later does not undo the past copies.
+- A move to the latest board of ANOTHER timeline ('>' without ~) advances BOTH
+  timelines at once: the arriving piece counts as that board's move.
+- Moves on playable boards ahead of the present are OPTIONAL but real: the
+  opponent can answer the present AND capture something on a non-present board
+  in the same turn.
+- Notation: two identical pieces are disambiguated by file (Kef7 and Kgf7 are
+  two different kings); pawn captures print as dxc6.
+
 NOTATION (5DPGN), used for all moves
 - One timeline: normal chess notation: e4, Nf3, exd5, O-O, e8=Q.
 - With several timelines, moves start with the board they're made from:
@@ -279,7 +296,11 @@ export const threatsText = (list, inCheck) => {
   const mates = list.filter((t) => t.kind === 'mate');
   const lines = ['If you made no move, the opponent could play:'];
   if(mates.length) { lines.push(`!! ${mates.length} MATE THREAT${mates.length > 1 ? 'S' : ''}: your move must stop ${mates.length > 1 ? 'these' : 'this'}.`); }
-  const shown = list.slice(0, 25);
+  // Mates and checks are never truncated (a hidden one once cost a game);
+  // only plain captures past the cap are summarized.
+  const dangers = list.filter((t) => t.kind !== 'capture');
+  const captures = list.filter((t) => t.kind === 'capture');
+  const shown = [...dangers, ...captures.slice(0, 40)];
   lines.push(...shown.map(line));
   if(list.length > shown.length) { lines.push(`... and ${list.length - shown.length} smaller captures`); }
   return lines.join('\n');

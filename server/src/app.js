@@ -196,7 +196,11 @@ export const createApp = ({
     if(action === 'moves' && req.method === 'POST') {
       const body = await readJson(req);
       const moves = Array.isArray(body.moves) ? body.moves : (typeof body.moves === 'string' ? [body.moves] : []);
-      return applyMoves(moves, body.submit !== false);
+      // submit=false is accepted in the body AND as a query parameter
+      // (several agents put it in the URL and were surprised it submitted)
+      const submit = body.submit !== undefined ? body.submit !== false
+        : url.searchParams.get('submit') !== 'false';
+      return applyMoves(moves, submit);
     }
 
     // GET fallback for agents whose tooling can only fetch URLs (some AI

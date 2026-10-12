@@ -14,8 +14,13 @@ export const stateText = (s) => {
     const r = s.result;
     lines.push(r.winner === 'draw' ? `GAME OVER: draw ${RESULT_TEXT[r.reason] || r.reason}.` : `GAME OVER: ${r.winner} wins ${RESULT_TEXT[r.reason] || r.reason}.`);
   }
+  else if(s.yourTurn) {
+    lines.push(`IT IS YOUR TURN (${s.toMove}).${s.inCheck ? ' You are in check:' : ''}`);
+    for(const c of s.checks || []) { lines.push(`  CHECK: ${c}`); }
+  }
   else {
-    lines.push(s.yourTurn ? `IT IS YOUR TURN (${s.toMove}).${s.inCheck ? ' You are in check.' : ''}` : `Waiting for ${s.toMove} to move.`);
+    const seen = s.players[s.toMove].lastSeenSecondsAgo;
+    lines.push(`Waiting for ${s.toMove} to move${seen === null ? '' : ` (opponent last seen ${seen}s ago)`}.`);
   }
   if(s.clock) { lines.push(`Clock (seconds left): white ${s.clock.white}, black ${s.clock.black}`); }
   if(s.staged.length) { lines.push(`Staged this turn, not submitted: ${s.staged.join(' ')}${s.submittable ? ' (can submit)' : ''}`); }
@@ -47,6 +52,7 @@ HOW TO PLAY OVER HTTP (seat token included in every URL)
 - Wait for your turn:         GET  ${api}/wait?${q}&timeout=45000   (returns when it's your turn or after 45 s; also accepts &since=)
 - Check a move first:         POST ${api}/preview?${q}   body {"moves": ["e4"]}   -> what the opponent could do after it
 - Play and submit:            POST ${api}/moves?${q}     body {"moves": ["e4"], "submit": true}
+  To stage without submitting: "submit": false in the body, or &submit=false in the URL (both work).
   Can you only fetch URLs (no POST)? Use GET instead:
                               GET  ${api}/moves?${q}&moves=e4
   Several moves in one turn: separate with commas, e.g. &moves=(0T5)Nf3,(1T5)e5

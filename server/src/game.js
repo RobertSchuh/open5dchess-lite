@@ -110,6 +110,15 @@ export class Game {
     return s.connections > 0 || Date.now() - s.lastSeen < 120000;
   }
 
+  // Seconds since this seat was last seen (ws or any authenticated request);
+  // null before the first contact. Lets a waiting opponent judge liveness.
+  lastSeenAgo(color) {
+    const s = this.seats[color];
+    if(s.connections > 0) { return 0; }
+    if(!s.lastSeen) { return null; }
+    return Math.round((Date.now() - s.lastSeen) / 1000);
+  }
+
   get ended() { return this.result !== null; }
   get player() { return this.chess.player; }
 
@@ -181,6 +190,7 @@ export class Game {
         clock.switch(this.player, this.chess.board);
       }
     }
+    this.lastActionAt = this.now();
     this.detectEnd();
     this.scheduleFlag();
     this.changed();
@@ -306,8 +316,8 @@ export class Game {
       clock: this.clock ? Object.assign(this.clock.state(), { serverTime: this.now() }) : null,
       result: this.result,
       players: {
-        white: { nickname: this.seats.white.nickname, connected: this.seatPresent('white') },
-        black: { nickname: this.seats.black.nickname, connected: this.seatPresent('black') },
+        white: { nickname: this.seats.white.nickname, connected: this.seatPresent('white'), lastSeenSecondsAgo: this.lastSeenAgo('white') },
+        black: { nickname: this.seats.black.nickname, connected: this.seatPresent('black'), lastSeenSecondsAgo: this.lastSeenAgo('black') },
       },
     };
   }
@@ -347,6 +357,15 @@ export class Game {
       });
     this.legalCache = { version: this.version, promise };
     return promise;
+  }
+
+  // Human-readable list of the current checks (attacker square -> king square)
+  checkLines() {
+    try {
+      return this.chess.checks('object').map((m) =>
+        `(L${m.start.timeline} T${m.start.turn}) ${m.start.coordinate} -> your king on (L${m.end.timeline} T${m.end.turn}) ${m.end.coordinate}`);
+    }
+    catch(err) { return []; }
   }
 
   // 5DPGN names of the moves staged this action. The engine's export leaves
@@ -452,6 +471,10 @@ export class Game {
       actionNumber: this.chess.actionNumber,
       result: this.result,
       inCheck: this.ended ? false : this.chess.inCheck,
+      // Who checks whom, e.g. "(L0 T20) c4 -> your king on (L0 T17) f7";
+      // kings on PAST boards are attackable too, which surprises everyone
+      checks: this.ended || !this.chess.inCheck ? [] : this.checkLines(),
+      lastActionAt: this.lastActionAt || null,
       // Moves you've staged this action (not yet submitted)
       staged: this.stagedMoves(),
       submittable: yourTurn && !this.chess.inCheck && this.chess.submittable(),

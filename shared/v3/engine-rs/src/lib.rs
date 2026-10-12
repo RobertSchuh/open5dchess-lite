@@ -2059,6 +2059,14 @@ pub extern "C" fn v3_has_legal(len: i32, budget_ms: f64) -> i32 {
     can_complete(&mut p, &mut arena, &mut ctx, 0, h) as i32
 }
 
+//Hypercuboid legal-action search: the main mate/stalemate prover
+#[no_mangle]
+pub extern "C" fn v3_has_legal_hc(len: i32, budget_ms: f64) -> i32 {
+    let (mut p, mut arena) = parse(&inbuf()[..len as usize]);
+    let mut st = hypercuboid::HcStats::default();
+    hypercuboid::has_legal_hc(&mut p, &mut arena, now_ms() + budget_ms, &mut st) as i32
+}
+
 //Debug/differential-test export: the raw move list in upstream order.
 //Format: [total i32 count, then per move: nPositions, per position: nInts, ints]
 #[no_mangle]

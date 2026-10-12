@@ -63,10 +63,11 @@ const oursVerdict = (fn, chess) => {
   try { has = fn(pos, BUDGET_MS); }
   catch(err) { return `error: ${err.message}`.slice(0, 200); }
   if(has === 'yes') { return 'yes'; }
-  if(has === 'unknown') { return 'unknown'; }
+  if(has === 'unknown' || has === 'timeout') { return 'unknown'; }
   return pos.inCheck() ? 'mate' : 'stalemate';
 };
-const v3HasLegal = (pos, budget) => v3.hasLegalAction(pos, budget);
+const v3HasLegal = (pos, budget) => v3.hasLegalActionDfs(pos, budget);
+const hcHasLegal = (pos, budget) => v3.hasLegalActionHc(pos, budget);
 
 // Random games with the SERVER's submit rule (never submit while in check),
 // biased toward time travel. Deterministic per seed.
@@ -121,19 +122,20 @@ const checkGame = (label, variant, buildChess, report) => {
     }
     const a = oursVerdict(hasLegalAction, chess);
     const b = oursVerdict(v3HasLegal, chess);
+    const hcv = oursVerdict(hcHasLegal, chess);
     //Once ftxi cannot replay the game (it disputes a move's legality), later
     //positions of the same game are unreachable for it: report it once.
     const f = ftxiBroken ? 'skip' : ftxiVerdict(pgn, k);
     if(f.startsWith('error')) { ftxiBroken = true; }
     positions++;
-    const verdicts = { v2: a, v3: b, ftxi: f };
+    const verdicts = { v2: a, v3: b, hc: hcv, ftxi: f };
     const firm = Object.values(verdicts).filter((v) => v !== 'unknown' && v !== 'skip' && !v.startsWith('error'));
     if(Object.values(verdicts).some((v) => v === 'unknown')) { unknowns++; }
     const agree = new Set(firm).size <= 1;
     if(!agree || f.startsWith('error')) {
       disagreements++;
       report.push({ label, position: k, at: atSelector(k), verdicts, pgn });
-      console.log(`  DISAGREE ${label} @${atSelector(k)}: v2=${a} v3=${b} ftxi=${f}`);
+      console.log(`  DISAGREE ${label} @${atSelector(k)}: v2=${a} v3=${b} hc=${hcv} ftxi=${f}`);
     }
   }
   return { positions, disagreements, unknowns };

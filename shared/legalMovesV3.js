@@ -85,10 +85,27 @@ export const classifyMoves = (input, totalBudgetMs = 4000, perMoveBudgetMs = 500
   return res;
 };
 
-//Same contract as legalMoves.hasLegalAction: 'yes' | 'no' | 'timeout'
-export const hasLegalAction = (input, budgetMs = 10000) => {
+//The DFS search (the original v3 prover; kept as watchdog and fallback)
+export const hasLegalActionDfs = (input, budgetMs = 10000) => {
   const len = upload(input);
   return RESULTS[ex.v3_has_legal(len, budgetMs)];
+};
+
+//The hypercuboid search: proves deep travel-mates the DFS cannot
+export const hasLegalActionHc = (input, budgetMs = 10000) => {
+  const len = upload(input);
+  return RESULTS[ex.v3_has_legal_hc(len, budgetMs)];
+};
+
+//Same contract as legalMoves.hasLegalAction: 'yes' | 'no' | 'timeout'.
+//Hypercuboid is the main prover; on its (rare) timeout the DFS gets the
+//remaining budget as insurance against pathological fragmentation.
+export const hasLegalAction = (input, budgetMs = 10000) => {
+  const t0 = Date.now();
+  const r = hasLegalActionHc(input, budgetMs * 0.7);
+  if(r !== 'timeout') { return r; }
+  const left = budgetMs - (Date.now() - t0);
+  return left > 50 ? hasLegalActionDfs(input, left) : 'timeout';
 };
 
 //Raw move list as generated inside the wasm engine, in upstream order.

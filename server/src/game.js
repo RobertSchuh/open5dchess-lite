@@ -19,7 +19,7 @@ export const VARIANTS = ['standard', 'defended_pawn', 'half_reflected', 'princes
 // Mate detection first runs inline with the quick budget (covers almost all
 // positions and keeps results synchronous); only slow positions go to the
 // worker pool with the full budget.
-const END_SEARCH_MS = 10000;
+const END_SEARCH_MS = Number(process.env.END_SEARCH_MS || 10000);
 const END_QUICK_MS = Number(process.env.END_QUICK_MS || 250);
 const LEGAL_MOVES_MS = 4000;
 
@@ -205,7 +205,7 @@ export class Game {
     // The verdict is about this exact submit; staged moves by the opponent
     // meanwhile don't change it, and end() is a no-op if the game ended
     // another way first (resign, time).
-    pool.run('hasLegalAction', trimState(this.chess.state()), [END_SEARCH_MS], END_SEARCH_MS)
+    pool.run('hasLegalAction', trimState(this.chess.state()), [END_SEARCH_MS], END_SEARCH_MS + 2000)
       .then((res) => {
         if(res === 'no') {
           finish();

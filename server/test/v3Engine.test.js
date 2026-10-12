@@ -26,11 +26,16 @@ const checkPosition = (chess, label, budgets = [8000, 1500]) => {
     if(a[i] === 'unknown' || b[i] === 'unknown') { unknown++; continue; }
     assert.equal(b[i], a[i], `${label}: move ${i} classified ${b[i]} (v3) vs ${a[i]} (v2)`);
   }
-  //3. mate/stalemate detection
+  //3. mate/stalemate detection: main entry (hypercuboid + DFS fallback) and
+  //the pure hypercuboid, both against v2
   const av = v2.hasLegalAction(chess, 8000);
   const bv = v3.hasLegalAction(chess, 8000);
-  if(av !== 'timeout' && bv !== 'timeout') {
+  if(av !== 'timeout' && av !== 'unknown' && bv !== 'timeout') {
     assert.equal(bv, av, `${label}: hasLegalAction differs`);
+  }
+  const hv = v3.hasLegalActionHc(chess, 8000);
+  if(av !== 'timeout' && av !== 'unknown' && hv !== 'timeout') {
+    assert.equal(hv, av, `${label}: hypercuboid verdict differs`);
   }
   return { moves: a.length, unknown };
 };

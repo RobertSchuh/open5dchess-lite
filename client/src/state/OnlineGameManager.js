@@ -6,6 +6,7 @@ import Chess from '5d-chess-js';
 import { createNanoEvents } from 'nanoevents';
 
 import LegalMoveHints from 'state/LegalMoveHints';
+import { fixPawnCaptures } from 'shared/notation.js';
 import { socketUrl } from 'network/online';
 
 const RECONNECT_MIN_MS = 1000;
@@ -131,7 +132,7 @@ export default class OnlineGameManager {
       pastAvailableMoves: [],
       undoable: myTurn && chess.undoable(),
       submittable: myTurn && chess.submittable(),
-      notation: chess.export('5dpgn_active_timeline'),
+      notation: fixPawnCaptures(chess.export('5dpgn_active_timeline')),
     };
   }
   refreshBoard() {
@@ -166,7 +167,7 @@ export default class OnlineGameManager {
     const promotion = Array.isArray(move.promotion) ? move.promotion[0] : move.promotion;
     for(let i = 0;i < objects.length;i++) {
       if(key(objects[i]) === wanted && (objects[i].promotion || null) === (promotion || null)) {
-        return names[i];
+        return fixPawnCaptures(names[i]);
       }
     }
     return null;

@@ -3,6 +3,7 @@
 import { createRequire } from 'node:module';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { classifyMoves, hasLegalAction, trimState } from '../../shared/legalMoves.js';
+import { fixPawnCaptures } from '../../shared/notation.js';
 import { Position } from '../../shared/fastPosition.js';
 import { pool } from './analysisPool.js';
 import { threats, threatsText, timelineGrid, boardsData, renderBoard, macroGrid } from './describe.js';
@@ -138,7 +139,8 @@ export class Game {
   move(seat, input) {
     this.requireTurn(seat);
     try {
-      this.chess.move(input);
+      // Accept the engine's own doubled-file pawn-capture spelling too
+      this.chess.move(fixPawnCaptures(input));
     }
     catch(err) {
       throw new GameError(400, `Illegal move: ${typeof input === 'string' ? input : JSON.stringify(input)}`);
@@ -323,7 +325,7 @@ export class Game {
     const skip = this.chess.skipDetection;
     this.chess.skipDetection = true;
     let names;
-    try { names = this.chess.moves('5dpgn', false, false, false).trim().split('\n').filter(Boolean); }
+    try { names = this.chess.moves('5dpgn', false, false, false).trim().split('\n').filter(Boolean).map(fixPawnCaptures); }
     finally { this.chess.skipDetection = skip; }
     const version = this.version;
     const promise = pool.run('classify', trimState(this.chess.state()), [LEGAL_MOVES_MS], LEGAL_MOVES_MS)
@@ -361,7 +363,7 @@ export class Game {
       const objects = probe.moves('object', false, false, false);
       const strings = probe.moves('5dpgn', false, false, false).trim().split('\n');
       const i = objects.findIndex((o) => same(o, move));
-      names.push(i >= 0 ? strings[i] : '?');
+      names.push(i >= 0 ? fixPawnCaptures(strings[i]) : '?');
       probe.move(move);
     }
     return names;
@@ -383,7 +385,7 @@ export class Game {
     const probe = new Chess();
     probe.state(this.chess.state()); // validation stays on: illegal moves throw
     for(const m of moves) {
-      try { probe.move(m); }
+      try { probe.move(fixPawnCaptures(m)); }
       catch(err) { throw new GameError(400, `Illegal move: ${m}`); }
     }
     // Moves are validated; turn detection off so submittable() skips the engine's slow mate search
@@ -458,7 +460,7 @@ export class Game {
         running: state.clock.running,
       },
       players: state.players,
-      pgn: this.chess.export('5dpgn'),
+      pgn: fixPawnCaptures(this.chess.export('5dpgn')),
       // Latest board of each timeline, and every board of every timeline as a grid
       boards: boardText(this.chess),
       timelines: this.#timelinesText(seat, yourTurn, since),

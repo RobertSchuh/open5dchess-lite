@@ -81,6 +81,26 @@ test('legal move list only contains moves that can complete an action', async ()
   assert.deepEqual([...legal].sort(), ['g6']);
 });
 
+test('pawn-capture names are not doubled and every listed legal move is accepted', async () => {
+  const g = new Game({ id: 'x' });
+  play(g, 'white', ['e4']); play(g, 'black', ['e5']);
+  play(g, 'white', ['Nf3']); play(g, 'black', ['Nc6']);
+  play(g, 'white', ['Bb5']); play(g, 'black', ['Nf6']);
+  play(g, 'white', ['Bxc6']);
+  const legal = (await g.legalMoves()).moves;
+  // 5d-chess-js names these bbxc6/ddxc6 and then rejects its own spelling
+  assert.ok(legal.includes('bxc6') && legal.includes('dxc6'), legal.join(','));
+  assert.ok(!legal.some((m) => /([a-h])\1x/.test(m)), legal.join(','));
+  for(const m of legal) { // every advertised move must be playable
+    g.move('black', m);
+    g.undo('black');
+  }
+  // both spellings are accepted as input, and the pgn prints the clean one
+  g.move('black', 'ddxc6');
+  g.submit('black');
+  assert.match((await g.textState('black')).pgn, /[^d]dxc6/);
+});
+
 test('resign ends the game for the other side', () => {
   const g = new Game({ id: 'x' });
   g.resign('black');

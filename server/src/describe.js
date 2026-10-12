@@ -3,6 +3,7 @@
 // (and so by the MCP server), so any agent gets the same information.
 import { createRequire } from 'node:module';
 import { hasLegalAction, trimState } from '../../shared/legalMoves.js';
+import { fixPawnCaptures } from '../../shared/notation.js';
 import { Position } from '../../shared/fastPosition.js';
 import * as enginePiece from '../../shared/engine/piece.js';
 
@@ -229,7 +230,7 @@ export const threats = (chess, budgetMs = 6000) => {
   nameProbe.skipDetection = true;
   if(chess.moveBuffer.length > 0 && root.submittable()) { nameProbe.submit(); }
   else { nameProbe.pass(); }
-  const names = nameProbe.moves('5dpgn', false, false, false).trim().split('\n');
+  const names = nameProbe.moves('5dpgn', false, false, false).trim().split('\n').map(fixPawnCaptures);
   const res = [];
   for(let i = 0;i < rawMoves.length;i++) {
     const m = rawMoves[i];

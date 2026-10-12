@@ -51,6 +51,12 @@ export default class Controls extends React.Component {
           </Grid>
           <Grid item xs={12}>
             <HotkeyPicker
+              hotkeyTarget='presentZoom'
+              label={<Trans>Focus Current Board</Trans>}
+            />
+          </Grid>
+          <Grid item xs={12}>
+            <HotkeyPicker
               hotkeyTarget='restore'
               label={<Trans>Restore</Trans>}
             />

@@ -469,6 +469,11 @@ export default class Player extends React.Component {
         <Hotkeys
           onUndo={this.props.submitCanUndo ? this.onUndo.bind(this) : null}
           onSubmit={this.props.submitCanSubmit ? this.onSubmit.bind(this) : null}
+          onPresentZoom={() => {
+            if(this.chessRendererRef.current && this.chessRendererRef.current.chessRenderer) {
+              this.chessRendererRef.current.chessRenderer.zoom.present(true, false);
+            }
+          }}
           onRestore={this.props.allowAnalyze ? this.props.analyzeOnRestore : null}
           onPreviousAction={this.props.allowAnalyze ? this.props.analyzeOnPreviousAction : null}
           onPreviousMove={this.props.allowAnalyze ? this.props.analyzeOnPreviousMove : null}

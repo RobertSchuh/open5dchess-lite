@@ -51,7 +51,12 @@ class Global {
       antialias: this.configStore.get('app').antialias,
       forceCanvas: this.configStore.get('app').forceCanvas,
       backgroundAlpha: this.configStore.get('app').backgroundAlpha,
-      powerPreference: 'high-performance'
+      powerPreference: 'high-performance',
+      //Render at the device's pixel density; without this, phones (DPR 2-3)
+      //upscale a 1x canvas and arrows/lines come out pixelated. Capped at 2:
+      //past that the sharpness gain is invisible but the fill cost is not.
+      resolution: Math.min(Math.max(window.devicePixelRatio || 1, 1), 2),
+      autoDensity: true,
     });
     this.app.renderer.plugins.interaction.moveWhenInside = true;
 
@@ -66,7 +71,7 @@ class Global {
     });
     this.viewport.options.disableOnContextMenu = true;
     this.app.stage.addChild(this.viewport);
-    this.viewport.resize(this.app.renderer.width, this.app.renderer.height);
+    this.viewport.resize(this.app.renderer.screen.width, this.app.renderer.screen.height);
 
     //Create and attach layers
     this.layers = new Layers(this.PIXI, this.viewport);
@@ -150,11 +155,11 @@ class Global {
     //Attach PIXI app to element
     this.app.resizeTo = this.element;
     this.element.appendChild(this.app.view);
-    this.viewport.resize(this.app.renderer.width, this.app.renderer.height);
+    this.viewport.resize(this.app.renderer.screen.width, this.app.renderer.screen.height);
 
     //Trigger resize on element change for viewport
     elementResizeEvent(this.element, throttle(500, () => {
-      this.viewport.resize(this.app.renderer.width, this.app.renderer.height);
+      this.viewport.resize(this.app.renderer.screen.width, this.app.renderer.screen.height);
       this.emitter.emit('resizeEvent');
     }));
 

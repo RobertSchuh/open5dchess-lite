@@ -3,6 +3,7 @@ import store from 'store';
 const defaultHotkeys = {
   undo: 'Z, Ctrl+ArrowLeft, Backspace',
   submit: 'F, Ctrl+ArrowRight, Enter',
+  presentZoom: 'Tab',
   restore: 'R',
   previousAction: 'Shift+ArrowLeft',
   previousMove: 'ArrowLeft',

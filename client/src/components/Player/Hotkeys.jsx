@@ -8,6 +8,7 @@ Props
  - disabled
  - onUndo
  - onSubmit
+ - onPresentZoom
  - onRestore
  - onPreviousAction
  - onPreviousMove
@@ -64,6 +65,11 @@ export default class Hotkeys extends React.Component {
       if(triggered.includes('submit')) {
         if(typeof this.props.onSubmit === 'function') {
           this.props.onSubmit();
+        }
+      }
+      if(triggered.includes('presentZoom')) {
+        if(typeof this.props.onPresentZoom === 'function') {
+          this.props.onPresentZoom();
         }
       }
       if(triggered.includes('restore')) {

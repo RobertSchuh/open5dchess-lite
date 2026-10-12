@@ -5,7 +5,9 @@ const defaultSettings = {
   eruda: false,
   quickPlay: {
     variants: ['standard'],
-    formats: ['none']
+    formats: ['none'],
+    color: 'white',
+    nickname: null
   }
 };
 

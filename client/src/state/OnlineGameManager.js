@@ -7,6 +7,7 @@ import { createNanoEvents } from 'nanoevents';
 
 import LegalMoveHints from 'state/LegalMoveHints';
 import { fixPawnCaptures } from 'shared/notation.js';
+import * as online from 'network/online';
 import { socketUrl } from 'network/online';
 
 const RECONNECT_MIN_MS = 1000;
@@ -99,6 +100,21 @@ export default class OnlineGameManager {
     this.emitter.emit('onClockUpdate', this.getClock());
     if(state.result && !(prev && prev.result)) {
       this.emitter.emit('onEnd', state.result);
+      //Keep the finished game (created here or joined) in the past list
+      try {
+        online.recordPastGame({
+          gameId: this.gameId,
+          endedAt: Date.now(),
+          variant: state.variant,
+          you: state.you,
+          winner: state.result.winner,
+          reason: state.result.reason,
+          white: state.players.white.nickname,
+          black: state.players.black.nickname,
+          pgn: fixPawnCaptures(chess.export('5dpgn')),
+        });
+      }
+      catch(err) {}
     }
   }
 

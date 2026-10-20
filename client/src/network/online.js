@@ -84,6 +84,20 @@ export const listGames = () => {
     .sort((a, b) => b.lastSeen - a.lastSeen);
 };
 
+//Finished online games (created here or joined via an invite link): the full
+//move record is kept in browser storage so games outlive the server's memory.
+//Opened read-only through the analysis board.
+const PAST_CAP = 50;
+export const recordPastGame = (entry) => {
+  const list = store.get('pastOnlineGames') || [];
+  //One entry per distinct final position (a rematch reuses the game id but
+  //produces a different record; reopening a finished game produces the same)
+  if(list.some((g) => g.gameId === entry.gameId && g.pgn === entry.pgn)) { return; }
+  list.unshift(entry);
+  store.set('pastOnlineGames', list.slice(0, PAST_CAP));
+};
+export const listPastGames = () => store.get('pastOnlineGames') || [];
+
 //Invite links for a game created on this device (or null)
 export const storedLinks = (gameId) => {
   const games = store.get('onlineGames') || {};

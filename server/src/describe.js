@@ -23,28 +23,58 @@ BOARDS
   board: the latest board of a timeline where it is your turn.
 
 MOVING THROUGH TIME AND TIMELINES
-- Treat turn and timeline as two more axes next to the board's files and ranks.
-  Pieces keep their movement pattern across all four axes: a rook slides along
-  one axis, a bishop along two axes in equal steps, the queen and king in any
-  combination (king one step), a knight goes 2 steps on one axis and 1 on another.
-  One step in time = one full turn back (same player's board).
-- You can move to the past (or to another timeline's board at the same turn),
-  never to the future.
-- Moving a piece to a PAST board does not change that board: it creates a NEW
-  timeline that branches off from there. White's new timelines are L1, L2, ...;
-  Black's are L-1, L-2, ...
-- Moving to the latest board of another timeline (same time, it's your turn
-  there) just moves the piece; no new timeline.
+- Treat turn and timeline as two more axes next to the board's files and ranks:
+  the four axes are file, rank, time (one step = one full turn into the past),
+  and timeline (one step = one neighboring timeline). Pieces keep their normal
+  movement pattern, just measured across any of the four axes.
+- PER PIECE, with examples (from a board at (0T9)):
+  * Rook: slides along ONE axis. Rb1-b5 (rank), or Rb1>>(0T5)b1~ (4 steps
+    straight back in time), or Rb1>(1T9)b1 (sideways one timeline).
+  * Bishop: slides along TWO axes in EQUAL steps. c1-f4 (file+rank), or
+    (0T9)Bc1>>(0T6)f1~ (3 files + 3 turns), or file+timeline, rank+timeline,
+    time+timeline.
+  * Unicorn: three axes equally; Dragon: all four axes equally.
+  * Queen: any number of axes, equal steps. The famous mate pattern
+    (0T9)Qf3>>x(0T5)f7~ is a "diagonal": 4 turns back + 4 ranks up.
+  * King: like the queen but ONE step: Ke1>(1T9)e1, or Ke1>>(0T8)d1~
+    (one turn back and one file over). Castling is normal-chess only.
+  * Knight: 2 steps on one axis, 1 on another: Nf3>>(0T8)f1 reaches the
+    board one turn back, two ranks down.
+  * Pawn: forward one rank on its own board (two from the start), OR sideways
+    one timeline in its color's direction (White toward Black's timelines
+    L-1..., Black toward White's L1...; two timelines from its starting square
+    if the square on the skipped timeline's board is empty). Pawns CAPTURE
+    diagonally: rank+file as usual, or timeline+time. En passant works on one
+    board as in chess.
+- You can move to the past, or to another timeline's board at the same turn —
+  never to the future. The destination board must EXIST and it must be a board
+  where it is your color's move (same "turn parity" as your playable boards).
+- Moving a piece to a PAST board (">>") does not change that board: it creates
+  a NEW timeline branching from it, whose first board is a copy plus your
+  arriving piece. White's new timelines are L1, L2, ...; Black's L-1, L-2, ...
+- Moving to the latest board of another timeline at the same turn (">") just
+  moves the piece there — no new timeline, and that single move counts as the
+  move for BOTH boards (origin and destination).
 
 THE PRESENT AND YOUR TURN
 - The "present" is the earliest turn among the latest boards of all active
   timelines. A turn (action) is one or more moves followed by submit: you must
   move on every present board where it is your turn. Other playable boards are
   optional.
-- Creating a timeline in the past moves the present back in time, which forces
-  the opponent to play on that new board first.
-- A player may have at most one more active timeline than the opponent; extra
-  ones are inactive and don't affect the present.
+- WORKED EXAMPLE of one full turn with 3 active timelines (L-1, L0, L1), all
+  present at T12 with you to move: you must make one move on each of the three
+  boards, e.g. "(0T12)Nf3", "(-1T12)e5", "(1T12)Rd1", then submit (3 moves,
+  one action). If instead your first move is a travel "(0T12)Qd3>>x(0T9)g6~",
+  it creates a new timeline at T9: the present jumps back to T9, your other
+  two T12 boards are no longer at the present, and you can submit immediately
+  — the opponent must now answer on the new T9 board first.
+- Creating a timeline in the past moves the present back in time ONLY if the
+  new timeline is active (next bullet). An inactive branch changes nothing
+  about whose turn it is where.
+- A player may have at most one more ACTIVE timeline than the opponent; extra
+  ones are inactive and don't affect the present. Creating timelines can also
+  re-ACTIVATE a previously inactive opposing timeline (the window widens), and
+  that timeline's old board may then pull the present far into the past.
 
 CHECK AND MATE
 - You may not submit while any of your kings could be captured by the
@@ -95,7 +125,26 @@ WHAT BEGINNERS MISS
   including time-travel captures and mate threats.
 - Only play moves from the legal move list. It only contains moves that can be
   part of a legal turn; when a turn needs several moves, play one and look at
-  the list again.`;
+  the list again.
+
+HOW TO PLAY WELL (strategy for an API player)
+- Each turn: read THREATS first, pick 2-3 candidate moves, POST /preview on
+  the best one to see the opponent's replies, then play and submit.
+- Do NOT move on playable boards AHEAD of the present without a concrete
+  tactical reason. The present will reach them anyway; moving early only gives
+  the opponent information and commits your pieces for free. Answer the
+  present boards and stop.
+- Time travel is strongest as a THREAT and as a defensive resource. Every
+  branch you create gives the opponent a whole new board to attack on, and
+  branching when you are ahead on active timelines makes the branch inactive
+  (often wasted). Travel with a purpose: capture something decisive, escape a
+  mate, or shift the present to a board where you are winning.
+- Guard the squares next to every king COPY, on every board and turn where it
+  stood - most lost games die to a check delivered through time at an old
+  board. f7/f2-style weaknesses exist in four dimensions.
+- Material on old boards is real: a rook "left behind" three turns ago can be
+  taken through time for profit. Conversely your past pieces defend your past
+  kings.`;
 
 const LETTER = (p) => (p.piece === '' ? 'P' : p.piece);
 const VALUE = { K: 100, C: 100, Y: 100, Q: 9, S: 8, D: 7, U: 5, R: 5, B: 3, N: 3, W: 1, P: 1 };

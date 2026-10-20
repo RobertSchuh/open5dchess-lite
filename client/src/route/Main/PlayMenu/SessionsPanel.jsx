@@ -18,6 +18,9 @@ import SessionCard from 'components/SessionCard';
 import EmitterContext from 'utils/EmitterContext';
 import * as sessions from 'network/sessions';
 import * as online from 'network/online';
+import { compressLink } from 'utils/LinkCompression';
+
+const RESULT_TEXT = { checkmate: 'by checkmate', stalemate: 'by stalemate', time: 'on time', resignation: 'by resignation' };
 
 const agoText = (ts) => {
   const mins = Math.round((Date.now() - ts) / 60000);
@@ -32,11 +35,13 @@ class SessionsPanel extends React.Component {
     sessionRequests: [],
     currentSessions: [],
     pastSessions: [],
-    onlineGames: []
+    onlineGames: [],
+    pastOnlineGames: []
   };
   async refresh() {
     let sessionData = await sessions.getSessions();
     sessionData.onlineGames = online.listGames();
+    sessionData.pastOnlineGames = online.listPastGames();
     this.setState(sessionData);
   }
   componentDidMount() {
@@ -61,6 +66,12 @@ class SessionsPanel extends React.Component {
     const variant = (game.variant || 'standard').replace(/_/g, ' ');
     const seat = game.seat && game.seat !== 'spectator' ? ` as ${game.seat}` : (game.seat === 'spectator' ? ' (spectating)' : '');
     return `${variant}${seat}`;
+  }
+  pastLabel(game) {
+    const variant = (game.variant || 'standard').replace(/_/g, ' ');
+    const outcome = game.winner === 'draw' ? `draw ${RESULT_TEXT[game.reason] || ''}`
+      : `${game.winner === game.you ? 'won' : (game.you === 'white' || game.you === 'black') ? 'lost' : `${game.winner} wins`} ${RESULT_TEXT[game.reason] || ''}`;
+    return `${variant} as ${game.you} — ${outcome}`;
   }
   render() {
     return (
@@ -94,6 +105,45 @@ class SessionsPanel extends React.Component {
                 </Typography>
                 <Typography variant='caption' color='textSecondary'>
                   <Trans>Games you open on this device show up here while the server keeps them.</Trans>
+                </Typography>
+              </Box>
+            }
+          </AccordionDetails>
+        </Accordion>
+        <Accordion defaultExpanded>
+          <AccordionSummary
+            expandIcon={<ExpandMoreIcon />}
+          >
+            <Typography>
+              <Trans>Past Online Games</Trans>
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            {this.state.pastOnlineGames.length > 0 ?
+              <Grid container spacing={1}>
+                {this.state.pastOnlineGames.map((game) => (
+                  <Grid key={game.gameId + game.endedAt} item xs={12}>
+                    <Button
+                      fullWidth
+                      variant='outlined'
+                      style={{ textTransform: 'none', justifyContent: 'space-between' }}
+                      onClick={() => this.props.history.push('/analyze?import=' + compressLink(game.pgn))}
+                    >
+                      <span>{this.pastLabel(game)}</span>
+                      <Typography variant='caption' color='textSecondary' component='span'>
+                        {agoText(game.endedAt)}
+                      </Typography>
+                    </Button>
+                  </Grid>
+                ))}
+              </Grid>
+            :
+              <Box>
+                <Typography>
+                  <Trans>No finished games yet...</Trans>
+                </Typography>
+                <Typography variant='caption' color='textSecondary'>
+                  <Trans>Finished online games are saved here on this device and open read-only on the analysis board.</Trans>
                 </Typography>
               </Box>
             }

@@ -133,104 +133,102 @@ pub fn find_matching(adj: &[Vec<usize>], required: &[bool]) -> Option<Vec<usize>
     const NONE: usize = usize::MAX;
     let n = adj.len();
     let mut mate = vec![NONE; n];
+
+    //One BFS phase per uncovered required vertex: find an alternating path
+    //from `root` that ends at an unmatched vertex, or at a matched vertex
+    //whose partner is not required (the partner gives its match up). Classic
+    //blossom contraction via base[] (e-maxx formulation): p[] holds the BFS
+    //parent of ODD vertices; blossoms re-root their members' p[] so augmenting
+    //paths lift through contracted cycles.
     loop {
         let root = match (0..n).find(|&v| required[v] && mate[v] == NONE) {
             Some(v) => v,
             None => return Some(mate),
         };
-        // BFS with blossom contraction from `root`
-        let mut parent = vec![NONE; n];
+        let mut p = vec![NONE; n];
         let mut base: Vec<usize> = (0..n).collect();
-        let mut even = vec![false; n];
-        let mut in_queue = vec![false; n];
-        let mut queue = std::collections::VecDeque::new();
-        even[root] = true;
-        in_queue[root] = true;
-        queue.push_back(root);
-        let mut augment_end = NONE;
+        let mut used = vec![false; n];
+        used[root] = true;
+        let mut q = std::collections::VecDeque::new();
+        q.push_back(root);
 
-        // walk to the root collecting the alternating path, flipping matches
-        let augment = |mate: &mut Vec<usize>, parent: &Vec<usize>, mut v: usize| {
+        let lca = |base: &Vec<usize>, p: &Vec<usize>, mate: &Vec<usize>, mut a: usize, mut b: usize| -> usize {
+            let mut marked = vec![false; base.len()];
+            loop {
+                a = base[a];
+                marked[a] = true;
+                if mate[a] == NONE { break; } //reached the (unmatched) root
+                a = p[mate[a]];
+            }
+            loop {
+                b = base[b];
+                if marked[b] { return b; }
+                b = p[mate[b]];
+            }
+        };
+        let mark_path = |blossom: &mut Vec<bool>, base: &Vec<usize>, p: &mut Vec<usize>,
+                         mate: &Vec<usize>, mut v: usize, b: usize, mut child: usize| {
+            while base[v] != b {
+                blossom[base[v]] = true;
+                blossom[base[mate[v]]] = true;
+                p[v] = child;
+                child = mate[v];
+                v = p[mate[v]];
+            }
+        };
+        //flip matches along the alternating path ending at odd vertex `v`
+        let augment = |mate: &mut Vec<usize>, p: &Vec<usize>, mut v: usize| {
             while v != NONE {
-                let pv = parent[v];
+                let pv = p[v];
                 let next = if pv == NONE { NONE } else { mate[pv] };
                 mate[v] = pv;
                 if pv != NONE { mate[pv] = v; }
                 v = next;
             }
         };
-        let lca = |base: &Vec<usize>, parent: &Vec<usize>, mate: &Vec<usize>, mut a: usize, mut b: usize| {
-            let mut seen = vec![];
-            let mut mark = std::collections::HashSet::new();
-            loop {
-                a = base[a];
-                mark.insert(a);
-                seen.push(a);
-                if mate[a] == NONE || parent[mate[a]] == NONE { break; }
-                a = parent[mate[a]];
-            }
-            loop {
-                b = base[b];
-                if mark.contains(&b) { return b; }
-                if mate[b] == NONE || parent[mate[b]] == NONE {
-                    // fall back: root is common ancestor
-                    return *seen.last().unwrap();
-                }
-                b = parent[mate[b]];
-            }
-        };
-        // mark blossom path from v up to the base, re-rooting parents
-        let mark_path = |base: &mut Vec<usize>, parent: &mut Vec<usize>,
-                         queue: &mut std::collections::VecDeque<usize>,
-                         in_queue: &mut Vec<bool>, even: &mut Vec<bool>,
-                         mate: &Vec<usize>, mut v: usize, b: usize, mut child: usize| {
-            while base[v] != b {
-                let mv = mate[v];
-                // v (odd) and its mate join the blossom; both become even-reachable
-                parent[v] = child;
-                base[v] = b;
-                base[mv] = b;
-                if !even[mv] {
-                    even[mv] = true;
-                }
-                if !even[v] { even[v] = true; }
-                if !in_queue[mv] { in_queue[mv] = true; queue.push_back(mv); }
-                if !in_queue[v] { in_queue[v] = true; queue.push_back(v); }
-                child = mv;
-                v = if parent[mv] == NONE { b } else { parent[mv] };
-            }
-        };
 
-        'bfs: while let Some(v) = queue.pop_front() {
-            for &u in &adj[v] {
-                if base[u] == base[v] || mate[v] == u { continue; }
-                if even[u] {
-                    // blossom: contract around the common ancestor
-                    let b = lca(&base, &parent, &mate, v, u);
-                    mark_path(&mut base, &mut parent, &mut queue, &mut in_queue, &mut even, &mate, v, b, u);
-                    mark_path(&mut base, &mut parent, &mut queue, &mut in_queue, &mut even, &mate, u, b, v);
+        let mut augmented = false;
+        'bfs: while let Some(v) = q.pop_front() {
+            for &to in &adj[v] {
+                if base[v] == base[to] || mate[v] == to { continue; }
+                if to == root || (mate[to] != NONE && p[mate[to]] != NONE) {
+                    //odd cycle: contract the blossom around the common base
+                    let cur = lca(&base, &p, &mate, v, to);
+                    let mut blossom = vec![false; n];
+                    mark_path(&mut blossom, &base, &mut p, &mate, v, cur, to);
+                    mark_path(&mut blossom, &base, &mut p, &mate, to, cur, v);
+                    for i in 0..n {
+                        if blossom[base[i]] {
+                            base[i] = cur;
+                            if !used[i] {
+                                used[i] = true;
+                                q.push_back(i);
+                            }
+                        }
+                    }
                 }
-                else if parent[u] == NONE {
-                    parent[u] = v;
-                    if mate[u] == NONE {
-                        // odd-length augmenting path: u is free
-                        augment_end = u;
+                else if p[to] == NONE {
+                    p[to] = v;
+                    if mate[to] == NONE {
+                        //path ends at a free vertex
+                        augment(&mut mate, &p, to);
+                        augmented = true;
                         break 'bfs;
                     }
-                    let w = mate[u];
+                    let w = mate[to];
                     if !required[w] {
-                        // even-length augmenting path: w need not be covered.
-                        // Flip matches along root..u, leaving w unmatched.
-                        augment_end = u;
+                        //path may end here: w is optional and donates its match
+                        augment(&mut mate, &p, to);
+                        if mate[w] == to { mate[w] = NONE; }
+                        augmented = true;
                         break 'bfs;
                     }
-                    even[w] = true;
-                    if !in_queue[w] { in_queue[w] = true; queue.push_back(w); }
+                    used[w] = true;
+                    q.push_back(w);
                 }
             }
         }
-        if augment_end == NONE { return None; }
-        augment(&mut mate, &parent, augment_end);
+        if !augmented { return None; }
     }
 }
 
@@ -265,6 +263,8 @@ pub(crate) struct Universe {
     pub axes: Vec<Axis>,
     /// Turn (half-move units) of the present when the universe was built
     pub present_t: i32,
+    /// timeline slot -> playable axis index
+    pub axis_of_tl: Vec<Option<usize>>,
 }
 
 fn is_branching(p: &Pos, m: &Mv) -> bool {
@@ -343,7 +343,7 @@ pub(crate) fn build_universe(p: &Pos, arena: &mut Arena) -> Universe {
         }
         axes.push(Axis { tl: None, present: false, sms });
     }
-    Universe { moves, axes, present_t }
+    Universe { moves, axes, present_t, axis_of_tl }
 }
 
 pub(crate) fn full_hypercuboid(u: &Universe) -> Hypercuboid {
@@ -392,7 +392,7 @@ pub(crate) fn take_point(u: &Universe, hc: &Hypercuboid) -> Option<Vec<usize>> {
     for b in 0..n {
         for id in hc.axes[b].iter() {
             if let Some(m) = mv_of(b, id) {
-                if let Some(sa) = u.axes.iter().position(|ax| ax.tl == Some(m.s.l as usize)) {
+                if let Some(sa) = u.axis_of_tl.get(m.s.l as usize).copied().flatten() {
                     if sa != b && dep_allowed(sa, m.s).is_some() && !adj[b].contains(&sa) {
                         adj[b].push(sa);
                         adj[sa].push(b);
@@ -442,8 +442,10 @@ pub(crate) fn take_point(u: &Universe, hc: &Hypercuboid) -> Option<Vec<usize>> {
 pub(crate) enum Problem {
     /// The point is a legal action (these are its moves, in applied order)
     Legal(Vec<Mv>),
-    /// A slice of invalid points containing this point (or not: see `contains`)
-    Slice(Slice),
+    /// A slice of invalid points containing this point. The bool marks slices
+    /// whose soundness argument is universe-global (safe to propagate into
+    /// every hypercuboid); the rest are removed from the current one only.
+    Slice(Slice, bool),
 }
 
 /// Which axis produced the post-action board (l, t)? Boards older than the
@@ -559,14 +561,14 @@ pub(crate) fn test_point(
                             sa.insert(point[axis]);
                             restr[axis] = Some(sa);
                             cleanup(p, arena, &mut undos);
-                            return Problem::Slice(Slice { restr });
+                            return Problem::Slice(Slice { restr }, false);
                         }
                     }
                 }
             }
             //Unknown conflict: banish exactly this point
             cleanup(p, arena, &mut undos);
-            return Problem::Slice(point_slice(point, &slice_sizes));
+            return Problem::Slice(point_slice(point, &slice_sizes), false);
         }
     }
 
@@ -607,7 +609,7 @@ pub(crate) fn test_point(
         }
         cleanup(p, arena, &mut undos);
         let slice = Slice { restr };
-        return Problem::Slice(ensure_contains(slice, point, &slice_sizes));
+        return Problem::Slice(ensure_contains(slice, point, &slice_sizes), false);
     }
 
     //Check test
@@ -632,33 +634,65 @@ pub(crate) fn test_point(
         .first()
         .map(|&l| (p.tls[l].as_ref().unwrap().len() - 1) as i32)
         .unwrap_or(i32::MAX);
-    if new_present_t < u.present_t {
-        //The earliest-head branch defines the new present; per the ruling,
-        //every other move in the action (on boards or further travels) is
-        //deferrable, so the whole family {this branch} x anything fails with
-        //this check: a codim-1 slice, one test per backward landing.
-        let mut best: Option<(usize, i32)> = None; //(axis, head turn)
-        for (a, &id) in point.iter().enumerate() {
-            if let Sm::Branch(i) = u.axes[a].sms[id] {
-                let head = u.moves[i as usize].d.t + 1;
-                if best.map_or(true, |(_, bh)| head < bh) {
-                    best = Some((a, head));
+    let (att, king) = list[0];
+    if new_present_t < u.present_t && point.iter().enumerate().any(|(a, &id)| matches!(u.axes[a].sms[id], Sm::Branch(_))) {
+        //Deferral ruling (Robert): with the present shifted back, moves on
+        //BOARDS are deferrable - so varying them cannot rescue this failing
+        //point. Additional BRANCHES are not deferrable (they shift activation
+        //and can void the very check we observed), so the slice pins every
+        //chosen branch exactly and admits only null or check-inert branches
+        //on the other new-timeline axes. Sound universe-wide: every point in
+        //the slice shares this point's branch set modulo inert additions.
+        let act_void = activation_can_void(p, u, att.t);
+        let act_parity = (p.action % 2) as i32;
+        let inert = |m: &Mv| -> bool {
+            !act_void && m.d.t > att.t && (m.d.t + 1).rem_euclid(2) != act_parity
+        };
+        //Activation depends only on how MANY timelines each side has, never on
+        //which branches created them. So for a fixed branch COUNT, swapping a
+        //chosen branch for any other "late" branch (new head strictly after
+        //the checker's turn) reproduces the same activation window and cannot
+        //pull the present below the checker either - the same check survives.
+        //Branches into the checker's past stay pinned: those are the only
+        //candidates that can void (Robert's zy insight: escapes must travel
+        //even further back), and they are few.
+        let late = |m: &Mv| -> bool { m.d.t + 1 > att.t };
+        let tested_present_ok = new_present_t > att.t;
+        let mut restr: Vec<Option<AxisSet>> = vec![None; u.axes.len()];
+        for (a, axis) in u.axes.iter().enumerate() {
+            if axis.tl.is_some() {
+                continue; //playable boards stay free (the deferrable part)
+            }
+            let chosen = point[a];
+            let mut set = AxisSet::empty(slice_sizes[a]);
+            match axis.sms[chosen] {
+                Sm::Branch(ci) if tested_present_ok && late(&u.moves[ci as usize]) => {
+                    //any late branch here yields the same fate
+                    for id in 0..slice_sizes[a] {
+                        if let Sm::Branch(i) = axis.sms[id] {
+                            if late(&u.moves[i as usize]) { set.insert(id); }
+                        }
+                    }
+                }
+                Sm::Branch(_) => { set.insert(chosen); } //early branch: pin exactly
+                _ => {
+                    for id in 0..slice_sizes[a] {
+                        match axis.sms[id] {
+                            Sm::Null => set.insert(id),
+                            Sm::Branch(i) if inert(&u.moves[i as usize]) => set.insert(id),
+                            _ => {}
+                        }
+                    }
                 }
             }
+            restr[a] = Some(set);
         }
-        if let Some((a, _)) = best {
-            let mut restr: Vec<Option<AxisSet>> = vec![None; u.axes.len()];
-            let mut s = AxisSet::empty(slice_sizes[a]);
-            s.insert(point[a]);
-            restr[a] = Some(s);
-            cleanup(p, arena, &mut undos);
-            return Problem::Slice(Slice { restr });
-        }
+        cleanup(p, arena, &mut undos);
+        return Problem::Slice(ensure_contains(Slice { restr }, point, &slice_sizes), true);
     }
-    let (att, king) = list[0];
     let slice = check_slice(p, u, hc, point, &owner, att, king, &slice_sizes);
     cleanup(p, arena, &mut undos);
-    Problem::Slice(ensure_contains(slice, point, &slice_sizes))
+    Problem::Slice(ensure_contains(slice, point, &slice_sizes), false)
 }
 
 fn point_slice(point: &[usize], sizes: &[usize]) -> Slice {
@@ -694,6 +728,40 @@ fn ensure_contains(slice: Slice, point: &[usize], sizes: &[usize]) -> Slice {
 /// boards identical and neither blocks the path, captures the checker,
 /// interferes at the king's square, nor branches (branches can shift the
 /// present and void checks, so they are conservatively kept in the space).
+//Can ANY branch combination of sibling points void a check whose attacker
+//sits at turn `att_t`? Mirrors the DFS act_void scan (lib.rs can_complete),
+//with the activation window widened by the number of branches an action could
+//make. `p` is the post-action position (a superset of every sibling's
+//timelines), so the scan is conservative.
+fn activation_can_void(p: &Pos, u: &Universe, att_t: i32) -> bool {
+    let k_branches = u.axes.iter().filter(|a| a.tl.is_none()).count();
+    let (mut fam_odd, mut fam_even) = (0usize, 0usize);
+    for l in 0..p.tls.len() {
+        if p.tls[l].is_none() {
+            continue;
+        }
+        if fam_odd < l && l % 2 != 0 {
+            fam_odd = l;
+        }
+        if fam_even < l && l % 2 == 0 {
+            fam_even = l;
+        }
+    }
+    for l in 0..p.tls.len() {
+        let tl = match &p.tls[l] {
+            Some(tl) => tl,
+            None => continue,
+        };
+        let active = (fam_even + 1 >= l && l % 2 != 0) || (fam_odd + 3 >= l && l % 2 == 0);
+        let near = (fam_even + 1 + 2 * k_branches >= l && l % 2 != 0)
+            || (fam_odd + 3 + 2 * k_branches >= l && l % 2 == 0);
+        if !active && near && (tl.len() as i32 - 1) <= att_t + 1 {
+            return true;
+        }
+    }
+    false
+}
+
 fn check_slice(
     p: &Pos,
     u: &Universe,
@@ -712,39 +780,8 @@ fn check_slice(
     if let Some(a) = owner.get(king.l, king.t) {
         exact[a] = true;
     }
-    //Can ANY branch combination of sibling points void this check? Mirrors
-    //the DFS act_void scan (lib.rs can_complete), with the activation window
-    //widened by the number of branches an action could make. NOTE: p is the
-    //post-action position here, which contains the tested point's branches —
-    //a superset of every sibling's timelines, so the scan is conservative.
-    let k_branches = u.axes.iter().filter(|a| a.tl.is_none()).count() as usize;
+    let act_void = activation_can_void(p, u, att.t);
     let act_parity = (p.action % 2) as i32;
-    let (mut fam_odd, mut fam_even) = (0usize, 0usize);
-    for l in 0..p.tls.len() {
-        if p.tls[l].is_none() {
-            continue;
-        }
-        if fam_odd < l && l % 2 != 0 {
-            fam_odd = l;
-        }
-        if fam_even < l && l % 2 == 0 {
-            fam_even = l;
-        }
-    }
-    let mut act_void = false;
-    for l in 0..p.tls.len() {
-        let tl = match &p.tls[l] {
-            Some(tl) => tl,
-            None => continue,
-        };
-        let active = (fam_even + 1 >= l && l % 2 != 0) || (fam_odd + 3 >= l && l % 2 == 0);
-        let near = (fam_even + 1 + 2 * k_branches >= l && l % 2 != 0)
-            || (fam_odd + 3 + 2 * k_branches >= l && l % 2 == 0);
-        if !active && near && (tl.len() as i32 - 1) <= att.t + 1 {
-            act_void = true;
-            break;
-        }
-    }
     //a branch that cannot shift the present behind the checker and whose new
     //head is not ours cannot touch the check: safe to remove with the slice
     let branch_is_inert = |m: &Mv| -> bool {
@@ -842,6 +879,25 @@ pub struct HcStats {
     pub max_space: usize,
     pub axes: usize,
     pub volume_log2: f64,
+    pub slices: u64,
+    pub propagated: u64,
+    pub t_take_ms: f64,
+    pub t_test_ms: f64,
+    pub t_slice_ms: f64,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+macro_rules! hc_timed {
+    ($slot:expr, $e:expr) => {{
+        let __t = std::time::Instant::now();
+        let __r = $e;
+        $slot += __t.elapsed().as_secs_f64() * 1000.0;
+        __r
+    }};
+}
+#[cfg(target_arch = "wasm32")]
+macro_rules! hc_timed {
+    ($slot:expr, $e:expr) => {{ let _ = &$slot; $e }};
 }
 
 /// Hypercuboid legal-action search: YES / NO / TIMEOUT. `deadline` in ms epoch.
@@ -865,14 +921,34 @@ pub(crate) fn has_legal_hc(p: &mut Pos, arena: &mut Arena, deadline: f64, st: &m
         if st.iters % 64 == 0 && now_ms() > deadline {
             return TIMEOUT;
         }
-        let point = match take_point(&u, &hc) {
+        let point = match hc_timed!(st.t_take_ms, take_point(&u, &hc)) {
             Some(pt) => pt,
             None => continue, //no consistent point lives in this hypercuboid
         };
-        match test_point(p, arena, &u, &hc, &point) {
+        match hc_timed!(st.t_test_ms, test_point(p, arena, &u, &hc, &point)) {
             Problem::Legal(_action) => return YES,
-            Problem::Slice(slice) => {
-                space.extend(remove_slice(&hc, &slice));
+            Problem::Slice(slice, global) => {
+                st.slices += 1;
+                hc_timed!(st.t_slice_ms, {
+                    //A codim-1 slice removes cleanly (at most one piece per
+                    //hypercuboid): propagate it through the whole space so the
+                    //same invalid region is never rediscovered piecemeal - but
+                    //ONLY slices whose soundness is universe-global (today:
+                    //the deferral slices that carry the travel-mate proofs).
+                    if global && slice.codim() <= 1 {
+                        let mut kept: Vec<Hypercuboid> = Vec::with_capacity(space.len() + 1);
+                        for other in space.drain(..) {
+                            if slice.intersects(&other) {
+                                st.propagated += 1;
+                                kept.extend(remove_slice(&other, &slice));
+                            } else {
+                                kept.push(other);
+                            }
+                        }
+                        space = kept;
+                    }
+                    space.extend(remove_slice(&hc, &slice));
+                });
                 st.max_space = st.max_space.max(space.len());
             }
         }
@@ -887,14 +963,19 @@ pub fn profile_has_legal_hc(buf: &[i32], budget_ms: f64) {
     let mut st = HcStats::default();
     let r = has_legal_hc(&mut p, &mut arena, now_ms() + budget_ms, &mut st);
     println!(
-        "hc_has_legal = {} ({}) in {:.3}s | axes {} vol 2^{:.0} | iters {} max_space {} | arena boards {}",
+        "hc_has_legal = {} ({}) in {:.3}s | axes {} vol 2^{:.0} | iters {} slices {} propagated {} max_space {} | take {:.0}ms test {:.0}ms slice {:.0}ms | arena boards {}",
         r as i32,
         ["YES", "NO", "TIMEOUT"][r as usize],
         t0.elapsed().as_secs_f64(),
         st.axes,
         st.volume_log2,
         st.iters,
+        st.slices,
+        st.propagated,
         st.max_space,
+        st.t_take_ms,
+        st.t_test_ms,
+        st.t_slice_ms,
         arena.boards.len(),
     );
 }

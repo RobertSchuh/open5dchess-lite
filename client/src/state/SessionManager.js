@@ -1,5 +1,7 @@
 import Chess from '5d-chess-js';
 import LegalMoveHints from 'state/LegalMoveHints';
+import { hasLegalAction } from 'shared/legalMoves.js';
+import { Position } from 'shared/fastPosition.js';
 import ChessClock from '5d-chess-clock';
 import { createNanoEvents } from 'nanoevents';
 
@@ -52,6 +54,7 @@ export default class SessionManager {
     //TODO used for debugging
     window.chess = this.chess;
     window.chessClock = this.chessClock;
+    window.open5dSession = this;
   }
   async updateInterval() {
     let slowChecking = true;
@@ -194,19 +197,22 @@ export default class SessionManager {
     //synchronous, so only run it once per submitted action.
     if(!this.isServer && !this.session.ended) {
       let actionCount = this.chess.actionHistory.length;
-      if(actionCount !== this.lastDetectionActionCount) {
+      if(actionCount !== this.lastDetectionActionCount && this.chess.moveBuffer.length === 0) {
         this.lastDetectionActionCount = actionCount;
-        if(this.chess.inStalemate) {
-          await this.setSession();
-          this.session.winner = 'draw';
-          this.session.winCause = 'regular';
-          this.session.ended = true;
-          this.session.endDate = Date.now();
-          this.endSession();
+        //Mate/stalemate via our own engine (hypercuboid-validated), like the
+        //server: 5d-chess-js's inCheckmate reports mate when its search times
+        //out. A 'timeout' verdict leaves the game running - never a false end.
+        let verdict = 'yes';
+        let inCheck = false;
+        try {
+          const pos = Position.fromChess(this.chess);
+          inCheck = pos.inCheck();
+          verdict = hasLegalAction(pos, 4000);
         }
-        else if(this.chess.inCheckmate) {
+        catch(err) { verdict = 'timeout'; }
+        if(verdict === 'no') {
           await this.setSession();
-          this.session.winner = this.session.player === 'white' ? 'black' : 'white';
+          this.session.winner = inCheck ? (this.chess.player === 'white' ? 'black' : 'white') : 'draw';
           this.session.winCause = 'regular';
           this.session.ended = true;
           this.session.endDate = Date.now();

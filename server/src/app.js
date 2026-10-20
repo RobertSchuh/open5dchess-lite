@@ -28,6 +28,9 @@ const CONTENT_TYPES = {
   '.ogg': 'audio/ogg',
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+  '.flac': 'audio/flac',
+  '.wasm': 'application/wasm', //instantiateStreaming requires this exact type
   '.txt': 'text/plain; charset=utf-8',
   '.xml': 'application/xml',
   '.webmanifest': 'application/manifest+json',

@@ -620,79 +620,10 @@ pub(crate) fn test_point(
         cleanup(p, arena, &mut undos);
         return Problem::Legal(action);
     }
-    //Deferral rule (Robert, 2026-10-12): when a branch shifted the present
-    //BACK, the other boards' moves are deferrable — anything they could do
-    //now they could do next turn — so every point sharing these new-axis
-    //choices is equi-legal. The surviving check refutes the whole family:
-    //exact on the new-timeline axes, free on every playable axis. This is
-    //what reduces a travel-mate proof to one test per backward landing.
-    p.action += 1;
-    let mut opp_present: Vec<usize> = Vec::new();
-    present_timelines(p, &mut opp_present);
-    p.action -= 1;
-    let new_present_t = opp_present
-        .first()
-        .map(|&l| (p.tls[l].as_ref().unwrap().len() - 1) as i32)
-        .unwrap_or(i32::MAX);
     let (att, king) = list[0];
-    if new_present_t < u.present_t && point.iter().enumerate().any(|(a, &id)| matches!(u.axes[a].sms[id], Sm::Branch(_))) {
-        //Deferral ruling (Robert): with the present shifted back, moves on
-        //BOARDS are deferrable - so varying them cannot rescue this failing
-        //point. Additional BRANCHES are not deferrable (they shift activation
-        //and can void the very check we observed), so the slice pins every
-        //chosen branch exactly and admits only null or check-inert branches
-        //on the other new-timeline axes. Sound universe-wide: every point in
-        //the slice shares this point's branch set modulo inert additions.
-        let act_void = activation_can_void(p, u, att.t);
-        let act_parity = (p.action % 2) as i32;
-        let inert = |m: &Mv| -> bool {
-            !act_void && m.d.t > att.t && (m.d.t + 1).rem_euclid(2) != act_parity
-        };
-        //Activation depends only on how MANY timelines each side has, never on
-        //which branches created them. So for a fixed branch COUNT, swapping a
-        //chosen branch for any other "late" branch (new head strictly after
-        //the checker's turn) reproduces the same activation window and cannot
-        //pull the present below the checker either - the same check survives.
-        //Branches into the checker's past stay pinned: those are the only
-        //candidates that can void (Robert's zy insight: escapes must travel
-        //even further back), and they are few.
-        let late = |m: &Mv| -> bool { m.d.t + 1 > att.t };
-        let tested_present_ok = new_present_t > att.t;
-        let mut restr: Vec<Option<AxisSet>> = vec![None; u.axes.len()];
-        for (a, axis) in u.axes.iter().enumerate() {
-            if axis.tl.is_some() {
-                continue; //playable boards stay free (the deferrable part)
-            }
-            let chosen = point[a];
-            let mut set = AxisSet::empty(slice_sizes[a]);
-            match axis.sms[chosen] {
-                Sm::Branch(ci) if tested_present_ok && late(&u.moves[ci as usize]) => {
-                    //any late branch here yields the same fate
-                    for id in 0..slice_sizes[a] {
-                        if let Sm::Branch(i) = axis.sms[id] {
-                            if late(&u.moves[i as usize]) { set.insert(id); }
-                        }
-                    }
-                }
-                Sm::Branch(_) => { set.insert(chosen); } //early branch: pin exactly
-                _ => {
-                    for id in 0..slice_sizes[a] {
-                        match axis.sms[id] {
-                            Sm::Null => set.insert(id),
-                            Sm::Branch(i) if inert(&u.moves[i as usize]) => set.insert(id),
-                            _ => {}
-                        }
-                    }
-                }
-            }
-            restr[a] = Some(set);
-        }
-        cleanup(p, arena, &mut undos);
-        return Problem::Slice(ensure_contains(Slice { restr }, point, &slice_sizes), true);
-    }
     let slice = check_slice(p, u, hc, point, &owner, att, king, &slice_sizes);
     cleanup(p, arena, &mut undos);
-    Problem::Slice(ensure_contains(slice, point, &slice_sizes), false)
+    Problem::Slice(ensure_contains(slice, point, &slice_sizes), true)
 }
 
 fn point_slice(point: &[usize], sizes: &[usize]) -> Slice {
@@ -728,40 +659,6 @@ fn ensure_contains(slice: Slice, point: &[usize], sizes: &[usize]) -> Slice {
 /// boards identical and neither blocks the path, captures the checker,
 /// interferes at the king's square, nor branches (branches can shift the
 /// present and void checks, so they are conservatively kept in the space).
-//Can ANY branch combination of sibling points void a check whose attacker
-//sits at turn `att_t`? Mirrors the DFS act_void scan (lib.rs can_complete),
-//with the activation window widened by the number of branches an action could
-//make. `p` is the post-action position (a superset of every sibling's
-//timelines), so the scan is conservative.
-fn activation_can_void(p: &Pos, u: &Universe, att_t: i32) -> bool {
-    let k_branches = u.axes.iter().filter(|a| a.tl.is_none()).count();
-    let (mut fam_odd, mut fam_even) = (0usize, 0usize);
-    for l in 0..p.tls.len() {
-        if p.tls[l].is_none() {
-            continue;
-        }
-        if fam_odd < l && l % 2 != 0 {
-            fam_odd = l;
-        }
-        if fam_even < l && l % 2 == 0 {
-            fam_even = l;
-        }
-    }
-    for l in 0..p.tls.len() {
-        let tl = match &p.tls[l] {
-            Some(tl) => tl,
-            None => continue,
-        };
-        let active = (fam_even + 1 >= l && l % 2 != 0) || (fam_odd + 3 >= l && l % 2 == 0);
-        let near = (fam_even + 1 + 2 * k_branches >= l && l % 2 != 0)
-            || (fam_odd + 3 + 2 * k_branches >= l && l % 2 == 0);
-        if !active && near && (tl.len() as i32 - 1) <= att_t + 1 {
-            return true;
-        }
-    }
-    false
-}
-
 fn check_slice(
     p: &Pos,
     u: &Universe,
@@ -780,13 +677,7 @@ fn check_slice(
     if let Some(a) = owner.get(king.l, king.t) {
         exact[a] = true;
     }
-    let act_void = activation_can_void(p, u, att.t);
-    let act_parity = (p.action % 2) as i32;
-    //a branch that cannot shift the present behind the checker and whose new
-    //head is not ours cannot touch the check: safe to remove with the slice
-    let branch_is_inert = |m: &Mv| -> bool {
-        !act_void && m.d.t > att.t && (m.d.t + 1).rem_euclid(2) != act_parity
-    };
+
     //Crossing squares of the checking ray on boards the action produced
     let mut crossing: Vec<(usize, i32, i32)> = Vec::new(); //(axis, r, f)
     if let Some((lm, tm, rm, fm, steps)) = ray_vec(p, att, king) {
@@ -822,9 +713,15 @@ fn check_slice(
         for id in 0..sizes[a] {
             let on_crossing = crossing.iter().any(|&(ca, _, _)| ca == a);
             let keep_out = match u.axes[a].sms[id] {
-                //a branch may void the check by shifting the present, unless
-                //the void/enable analysis proves it inert
-                Sm::Branch(i) => !branch_is_inert(&u.moves[i as usize]),
+                //Checks are pure endpoint geometry: an attack is read from the
+                //post-action endpoint boards, past royals are historical
+                //targets, and activation/present never enter the predicate.
+                //A branch only creates a board on a NEW timeline slot and
+                //leaves its arrival board untouched, while its departed square
+                //is fixed by the pinned source axis - so no branch variation
+                //can alter this check's attacker, target, or ray. Branches
+                //ride in the slice freely.
+                Sm::Branch(_) => false,
                 Sm::Physical(i) | Sm::Arrival(i) => {
                     let m = &u.moves[i as usize];
                     let d = m.d;

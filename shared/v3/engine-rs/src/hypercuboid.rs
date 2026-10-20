@@ -234,7 +234,7 @@ pub fn find_matching(adj: &[Vec<usize>], required: &[bool]) -> Option<Vec<usize>
 
 //=== Universe over engine moves ===============================================
 use crate::{
-    apply, checks, gen_moves, now_ms, pos_exists, present_timelines, ray_vec,
+    apply, checks, gen_moves, now_ms, piece_at, pos_exists, present_timelines, ray_vec,
     timeline_move, undo, Arena, Mv, Pos, P4, NO, TIMEOUT, YES,
 };
 
@@ -262,9 +262,30 @@ pub(crate) struct Universe {
     pub moves: Vec<Mv>,
     pub axes: Vec<Axis>,
     /// Turn (half-move units) of the present when the universe was built
+    /// (kept for diagnostics; the slice logic reads clear_floor instead)
+    #[allow(dead_code)]
     pub present_t: i32,
     /// timeline slot -> playable axis index
     pub axis_of_tl: Vec<Option<usize>>,
+    /// Would the mover's first new timeline be active? (Later ones are only
+    /// active if earlier ones are: the opposite side's count is fixed.)
+    pub first_new_slot_active: bool,
+    /// Reactivation hammer: the mover's branching (up to one per new axis)
+    /// could reactivate a stale timeline whose top board awaits the OPPONENT
+    /// while its mover-parity top sits below the present. Activating it can
+    /// empty the present list with no pinnable witness, so present slices
+    /// must exclude every branch.
+    pub react_hammer: bool,
+    /// Saviors: (playable axis, branches needed to reactivate, top turn) of
+    /// reactivatable timelines whose TOP board awaits the mover below the
+    /// present. Reactivated and left unmoved, such a line realizes the
+    /// lowered present (still a failing pass), so present slices pin these
+    /// axes to Null instead of excluding branches.
+    pub saviors: Vec<(usize, usize, i32)>,
+    /// Branches arriving below this (= the present lowered by any saviors a
+    /// single branch reactivates) can clear the present and legalize a pass;
+    /// present slices exclude them. Branches at or above it ride free.
+    pub clear_floor: i32,
 }
 
 fn is_branching(p: &Pos, m: &Mv) -> bool {
@@ -343,7 +364,97 @@ pub(crate) fn build_universe(p: &Pos, arena: &mut Arena) -> Universe {
         }
         axes.push(Axis { tl: None, present: false, sms });
     }
-    Universe { moves, axes, present_t, axis_of_tl }
+
+    //Present-slice activity facts (see the present test in test_point). All
+    //branch destinations share the mover's half-turn parity (time steps are
+    //full turns), so the mover's new slots land in ONE slot-parity family,
+    //whose growth is known upfront. Mirrors present_timelines' is_active.
+    let mut min_tl: usize = 0; //highest odd slot
+    let mut max_tl: usize = 0; //highest even slot
+    for l in 0..p.tls.len() {
+        if p.tls[l].is_none() {
+            continue;
+        }
+        if l % 2 != 0 && min_tl < l {
+            min_tl = l;
+        }
+        if l % 2 == 0 && max_tl < l {
+            max_tl = l;
+        }
+    }
+    let first_new_slot_active = if parity == 0 {
+        let l_new = if max_tl == 0 { 2 } else { max_tl + 2 };
+        l_new <= min_tl + 3
+    } else {
+        let l_new = if min_tl == 0 { 1 } else { min_tl + 2 };
+        l_new <= max_tl + 1
+    };
+    let is_active =
+        |l: usize, mn: usize, mx: usize| if l % 2 != 0 { mx + 1 >= l } else { mn + 3 >= l };
+    let mut react_hammer = false;
+    let mut saviors: Vec<(usize, usize, i32)> = Vec::new();
+    let mut clear_floor: i32 = present_t;
+    if k > 0 {
+        //walk the activity window as the mover branches 1..=k times; classify
+        //each timeline the widening reactivates
+        let (mut mn, mut mx) = (min_tl, max_tl);
+        for step in 1..=k {
+            let (pmn, pmx) = (mn, mx);
+            if parity == 0 {
+                mx = if mx == 0 { 2 } else { mx + 2 };
+            } else {
+                mn = if mn == 0 { 1 } else { mn + 2 };
+            }
+            for l in 0..p.tls.len() {
+                let tl = match &p.tls[l] {
+                    Some(tl) => tl,
+                    None => continue,
+                };
+                if is_active(l, pmn, pmx) || !is_active(l, mn, mx) {
+                    continue;
+                }
+                let overall = tl.iter().rposition(|&b| b >= 0).map(|t| t as i32).unwrap_or(-1);
+                let mut mover_top: i32 = -1;
+                for t in (0..tl.len()).rev() {
+                    if tl[t] >= 0 && t % 2 == parity {
+                        mover_top = t as i32;
+                        break;
+                    }
+                }
+                if mover_top >= present_t {
+                    continue; //cannot lower the present: harmless
+                }
+                if overall == mover_top {
+                    //top board awaits the mover below the present: a savior -
+                    //reactivated and unmoved it realizes the lowered present
+                    saviors.push((axis_of_tl[l].expect("savior tip is playable"), step, mover_top));
+                    if step == 1 && mover_top < clear_floor {
+                        clear_floor = mover_top;
+                    }
+                } else {
+                    react_hammer = true;
+                }
+            }
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if std::env::var("HC_DEBUG").is_ok() {
+        eprintln!(
+            "universe: parity {} present_t {} min_tl {} max_tl {} k {} first_active {} hammer {} saviors {:?} clear_floor {}",
+            parity, present_t, min_tl, max_tl, k, first_new_slot_active, react_hammer,
+            saviors, clear_floor
+        );
+    }
+    Universe {
+        moves,
+        axes,
+        present_t,
+        axis_of_tl,
+        first_new_slot_active,
+        react_hammer,
+        saviors,
+        clear_floor,
+    }
 }
 
 pub(crate) fn full_hypercuboid(u: &Universe) -> Hypercuboid {
@@ -459,6 +570,11 @@ impl BoardOwner {
         self.map.iter().find(|&&(ol, ot, _)| ol == l && ot == t).map(|&(_, _, a)| a)
     }
 }
+
+pub(crate) static PRESENT_SLICES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static CHECK_SLICES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static INTRINSIC_SLICES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub(crate) static NEWINV_SLICES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// Apply the point, diagnose it, and undo everything. Sound slices only:
 /// every point inside a returned slice is invalid.
@@ -576,25 +692,92 @@ pub(crate) fn test_point(
     let mut present: Vec<usize> = Vec::new();
     present_timelines(p, &mut present);
     if !present.is_empty() {
-        //every still-present board's axis chose Null (anything else moves it)
+        //The failing pass sits exactly at the universe's present: mid-action
+        //the mover-parity minimum never rises (old boards persist), so
+        //present[0]'s endpoint is u.present_t and its axis chose Null.
         let b_l = present[0];
-        let b_axis = u.axes.iter().position(|ax| ax.tl == Some(b_l)).unwrap();
-        let t_b = (p.tls[b_l].as_ref().unwrap().len() - 1) as i32;
+        let b_axis = u.axis_of_tl[b_l].expect("present board is playable");
+        //b either sat at the present when the universe was built, or it is a
+        //savior this point's branching reactivated (then its pass only exists
+        //because of the branches, and the slice must require them).
+        let b_at_build = u.axes[b_axis].present;
         let mut restr: Vec<Option<AxisSet>> = vec![None; u.axes.len()];
-        for (a, axis) in u.axes.iter().enumerate() {
-            if a == b_axis {
-                let mut s = AxisSet::empty(slice_sizes[a]);
-                s.insert(point[a]);
-                restr[a] = Some(s);
+        let mut sb = AxisSet::empty(slice_sizes[b_axis]);
+        sb.insert(point[b_axis]);
+        restr[b_axis] = Some(sb);
+        //Branching can reactivate a savior line (top board awaits the mover
+        //below the present): left unmoved it realizes the lowered present and
+        //the action still fails, so pin every savior to Null. (A point that
+        //moved a savior falls out of the slice; ensure_contains handles it.)
+        let mut floor = u.clear_floor;
+        let mut k0_b: usize = 0;
+        for &(sa, k0, top) in &u.saviors {
+            if sa == b_axis {
+                k0_b = k0;
+                floor = floor.min(top);
                 continue;
             }
-            //Keep (= exclude from the slice) any branch into the strict past
-            //of B: it could shift the present below B and legalize the point.
+            let null_id = (0..slice_sizes[sa])
+                .find(|&id| matches!(u.axes[sa].sms[id], Sm::Null))
+                .expect("playable axes always hold Null");
+            let mut s = AxisSet::empty(slice_sizes[sa]);
+            s.insert(null_id);
+            restr[sa] = Some(s);
+        }
+        //Reactivated pass: pin enough new axes to branches to guarantee b is
+        //reactivated in every slice point (under the hammer: to this point's
+        //exact branches, since extra branches could reach a hammer line).
+        let mut need = if b_at_build { 0 } else { k0_b.max(1) };
+        if !b_at_build {
+            for (a, axis) in u.axes.iter().enumerate() {
+                if need == 0 {
+                    break;
+                }
+                if axis.tl.is_some() || !matches!(axis.sms[point[a]], Sm::Branch(_)) {
+                    continue;
+                }
+                let mut s = AxisSet::empty(slice_sizes[a]);
+                if u.react_hammer {
+                    s.insert(point[a]);
+                } else {
+                    for id in 0..slice_sizes[a] {
+                        if let Sm::Branch(i) = axis.sms[id] {
+                            if u.moves[i as usize].d.t + 1 >= floor {
+                                s.insert(id);
+                            }
+                        }
+                    }
+                }
+                restr[a] = Some(s);
+                need -= 1;
+            }
+        }
+        if need > 0 {
+            //cannot witness the reactivation: banish exactly this point
+            cleanup(p, arena, &mut undos);
+            return Problem::Slice(point_slice(point, &slice_sizes), false);
+        }
+        //Only a branch can save a pass at the present: physical moves and
+        //arrivals advance endpoints and never lower it. A branch is excluded
+        //from the slice when it could create an ACTIVE timeline below the
+        //floor (the present, lowered to the reachable saviors' tops - those
+        //ride pinned and still fail), or - react_hammer - when branching
+        //could reactivate a stale timeline that empties the present with no
+        //pinnable witness. Inactive branches ride: they cannot touch the
+        //present.
+        for (a, axis) in u.axes.iter().enumerate() {
+            if axis.tl.is_some() || restr[a].is_some() {
+                continue; //branches live on unpinned new-timeline axes only
+            }
             let mut s = AxisSet::empty(slice_sizes[a]);
             let mut restricted = false;
             for id in 0..slice_sizes[a] {
                 let keep_out = match axis.sms[id] {
-                    Sm::Branch(i) => u.moves[i as usize].d.t < t_b,
+                    Sm::Branch(i) => {
+                        u.react_hammer
+                            || (u.first_new_slot_active
+                                && u.moves[i as usize].d.t + 1 < floor)
+                    }
                     _ => false,
                 };
                 if keep_out {
@@ -608,8 +791,11 @@ pub(crate) fn test_point(
             }
         }
         cleanup(p, arena, &mut undos);
+        PRESENT_SLICES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        //Universe-global: the argument reads only the move table and the
+        //pre-action activity facts, never this hypercuboid.
         let slice = Slice { restr };
-        return Problem::Slice(ensure_contains(slice, point, &slice_sizes), false);
+        return Problem::Slice(ensure_contains(slice, point, &slice_sizes), true);
     }
 
     //Check test
@@ -620,9 +806,48 @@ pub(crate) fn test_point(
         cleanup(p, arena, &mut undos);
         return Problem::Legal(action);
     }
-    let (att, king) = list[0];
-    let slice = check_slice(p, u, hc, point, &owner, att, king, &slice_sizes);
+    //Any surviving check soundly bans its slice; prefer the one whose boards
+    //avoid action-created timeline slots (those freeze every branch axis) and
+    //need the fewest exact pins - it removes the fattest region.
+    let (att, king) = *list
+        .iter()
+        .min_by_key(|&&(att, king)| {
+            //spatial check inside a branch-created board: codim-1 slice
+            if att.l == king.l && att.t == king.t {
+                if let Some(a) = owner.get(att.l, att.t) {
+                    if u.axes[a].tl.is_none() {
+                        return 0u32;
+                    }
+                }
+            }
+            let mut cost = 1u32;
+            let mut probe = |b: P4| {
+                if let Some(a) = owner.get(b.l, b.t) {
+                    cost += if u.axes[a].tl.is_none() { 1000 } else { 1 };
+                }
+            };
+            probe(att);
+            probe(king);
+            if let Some((lm, tm, rm, fm, steps)) = ray_vec(p, att, king) {
+                let mut cur = att;
+                for _ in 1..steps {
+                    cur = P4 {
+                        l: if lm == 0 { cur.l } else { timeline_move(cur.l, lm, p.is_even) },
+                        t: cur.t + tm,
+                        r: cur.r + rm,
+                        f: cur.f + fm,
+                    };
+                    if pos_exists(p, cur) {
+                        probe(cur);
+                    }
+                }
+            }
+            cost
+        })
+        .unwrap();
+    let slice = check_slice(p, arena, u, hc, point, &owner, att, king, &slice_sizes);
     cleanup(p, arena, &mut undos);
+    CHECK_SLICES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     Problem::Slice(ensure_contains(slice, point, &slice_sizes), true)
 }
 
@@ -656,11 +881,16 @@ fn ensure_contains(slice: Slice, point: &[usize], sizes: &[usize]) -> Slice {
 }
 
 /// The check `att -> king` survives for every point that keeps the involved
-/// boards identical and neither blocks the path, captures the checker,
-/// interferes at the king's square, nor branches (branches can shift the
-/// present and void checks, so they are conservatively kept in the space).
+/// boards identical and neither blocks the path, captures the checker, nor
+/// interferes at the king's square. Checks are pure endpoint geometry here:
+/// attacks are read from post-action endpoint boards, past royals are
+/// historical targets, and activation/present never enter the predicate - so
+/// branch variations ride in the slice freely, UNLESS the check itself
+/// involves a board on an action-created timeline slot (then slot assignment
+/// depends on the whole branch profile and every new axis is frozen).
 fn check_slice(
     p: &Pos,
+    arena: &crate::Arena,
     u: &Universe,
     hc: &Hypercuboid,
     point: &[usize],
@@ -670,16 +900,44 @@ fn check_slice(
     sizes: &[usize],
 ) -> Slice {
     let n = u.axes.len();
-    let mut exact: Vec<bool> = vec![false; n];
-    if let Some(a) = owner.get(att.l, att.t) {
-        exact[a] = true;
+    //Spatial check inside a branch-created board: the board is the (immutable)
+    //destination plus the landing piece, so the check is intrinsic to the
+    //branch MOVE and independent of slot assignment and every other axis -
+    //ban the branch on this axis alone (codim 1, propagates everywhere).
+    if att.l == king.l && att.t == king.t {
+        if let Some(a) = owner.get(att.l, att.t) {
+            if u.axes[a].tl.is_none() {
+                let mut restr: Vec<Option<AxisSet>> = vec![None; n];
+                let mut s = AxisSet::empty(sizes[a]);
+                s.insert(point[a]);
+                restr[a] = Some(s);
+                let _ = hc;
+                INTRINSIC_SLICES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                return Slice { restr };
+            }
+        }
     }
-    if let Some(a) = owner.get(king.l, king.t) {
-        exact[a] = true;
+    let mut exact: Vec<bool> = vec![false; n];
+    //New axes whose created board the check is read through. Branch slots are
+    //assigned in new-axis order (the apply loop clears all branches in its
+    //first pass), so a board on slot X stays on slot X exactly when the
+    //involved branches and the branch/null STATUS of the new axes below them
+    //are preserved; new axes above the highest involved one stay free.
+    let mut new_involved: Vec<usize> = Vec::new();
+    for b in [att, king] {
+        if let Some(a) = owner.get(b.l, b.t) {
+            exact[a] = true;
+            if u.axes[a].tl.is_none() && !new_involved.contains(&a) {
+                new_involved.push(a);
+            }
+        }
     }
 
-    //Crossing squares of the checking ray on boards the action produced
-    let mut crossing: Vec<(usize, i32, i32)> = Vec::new(); //(axis, r, f)
+    //Crossing squares of the checking ray on boards the action produced.
+    //`vacated`: the square held a piece on the board below (the action's move
+    //vacated it to open the ray) - sibling semimoves that do NOT depart that
+    //square leave the ray blocked, so only departures from it may ride.
+    let mut crossing: Vec<(usize, i32, i32, bool)> = Vec::new(); //(axis, r, f, vacated)
     if let Some((lm, tm, rm, fm, steps)) = ray_vec(p, att, king) {
         let mut cur = att;
         for _ in 1..steps {
@@ -693,9 +951,30 @@ fn check_slice(
                 continue;
             }
             if let Some(a) = owner.get(cur.l, cur.t) {
-                if !exact[a] {
-                    crossing.push((a, cur.r, cur.f));
+                if u.axes[a].tl.is_none() {
+                    //ray passes through a new slot's board: pin that branch
+                    exact[a] = true;
+                    if !new_involved.contains(&a) {
+                        new_involved.push(a);
+                    }
+                } else if !exact[a] {
+                    let below = P4 { l: cur.l, t: cur.t - 1, r: cur.r, f: cur.f };
+                    let vacated = pos_exists(p, below) && piece_at(p, arena, below) != 0;
+                    crossing.push((a, cur.r, cur.f, vacated));
                 }
+            }
+        }
+    }
+    //Below the highest involved new axis, only the branch/null status of the
+    //other new axes matters (it fixes the involved branches' slot ranks).
+    if !new_involved.is_empty() {
+        NEWINV_SLICES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+    let mut status_pin: Vec<bool> = vec![false; n];
+    if let Some(&jmax) = new_involved.iter().max() {
+        for (a, axis) in u.axes.iter().enumerate() {
+            if a < jmax && axis.tl.is_none() && !exact[a] {
+                status_pin[a] = true;
             }
         }
     }
@@ -708,38 +987,65 @@ fn check_slice(
             restr[a] = Some(s);
             continue;
         }
+        if status_pin[a] {
+            //keep this new axis on the point's side of the branch/null split
+            let mut s = AxisSet::empty(sizes[a]);
+            if matches!(u.axes[a].sms[point[a]], Sm::Null) {
+                s.insert(point[a]);
+            } else {
+                for id in 0..sizes[a] {
+                    if matches!(u.axes[a].sms[id], Sm::Branch(_)) {
+                        s.insert(id);
+                    }
+                }
+            }
+            restr[a] = Some(s);
+            continue;
+        }
         let mut s = AxisSet::empty(sizes[a]);
         let mut restricted = false;
         for id in 0..sizes[a] {
-            let on_crossing = crossing.iter().any(|&(ca, _, _)| ca == a);
+            let on_crossing = crossing.iter().any(|&(ca, _, _, _)| ca == a);
             let keep_out = match u.axes[a].sms[id] {
-                //Checks are pure endpoint geometry: an attack is read from the
-                //post-action endpoint boards, past royals are historical
-                //targets, and activation/present never enter the predicate.
-                //A branch only creates a board on a NEW timeline slot and
-                //leaves its arrival board untouched, while its departed square
-                //is fixed by the pinned source axis - so no branch variation
-                //can alter this check's attacker, target, or ray. Branches
-                //ride in the slice freely.
+                //a branch only touches a new slot (frozen above when the
+                //check involves one) and its departed square is fixed by the
+                //pinned source axis: it cannot alter this check
                 Sm::Branch(_) => false,
-                Sm::Physical(i) | Sm::Arrival(i) => {
+                Sm::Physical(i) => {
                     let m = &u.moves[i as usize];
-                    let d = m.d;
                     //anything that rewrites the attacker's or the king's
                     //timeline can change which board the check is read from
-                    d.l == att.l || d.l == king.l
-                        //blocks the path on this axis's board?
-                        || crossing.iter().any(|&(ca, cr, cf)| ca == a && d.r == cr && d.f == cf)
+                    m.d.l == att.l || m.d.l == king.l
+                        || crossing.iter().any(|&(ca, cr, cf, vac)| {
+                            ca == a
+                                //blocks the path on this axis's board, or
+                                //fails to vacate a square the ray needs open
+                                && ((m.d.r == cr && m.d.f == cf)
+                                    || (vac && !(m.s.r == cr && m.s.f == cf)))
+                        })
                         //castle/en-passant touch extra squares the d-filter
                         //cannot see: keep them out wholesale
+                        || !matches!(m.extra, crate::Extra::None)
+                }
+                Sm::Arrival(i) => {
+                    let m = &u.moves[i as usize];
+                    //an arrival never vacates squares on its landing board
+                    m.d.l == att.l || m.d.l == king.l
+                        || crossing.iter().any(|&(ca, cr, cf, vac)| {
+                            ca == a && ((m.d.r == cr && m.d.f == cf) || vac)
+                        })
                         || !matches!(m.extra, crate::Extra::None)
                 }
                 Sm::Departure(d) => {
                     //a departure removes a piece (cannot close the checking
                     //path) and its landing is filtered on the arrival's axis —
                     //but it still pushes a new board on ITS timeline, which
-                    //matters when that timeline is the attacker's or king's
+                    //matters for the attacker's or king's timeline, and it
+                    //must be THE departure when the ray needs its square open
                     d.l == att.l || d.l == king.l
+                        || crossing.iter().any(|&(ca, cr, cf, vac)| {
+                            ca == a && vac && !(d.r == cr && d.f == cf)
+                        })
                 }
                 //the checking ray was read through a board this axis's chosen
                 //semimove created; a sibling that does not create it may break
@@ -781,6 +1087,9 @@ pub struct HcStats {
     pub t_take_ms: f64,
     pub t_test_ms: f64,
     pub t_slice_ms: f64,
+    pub no_point: u64,
+    pub codim_sum: u64,
+    pub global_slices: u64,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -797,6 +1106,15 @@ macro_rules! hc_timed {
     ($slot:expr, $e:expr) => {{ let _ = &$slot; $e }};
 }
 
+/// Global slices with at most this codimension propagate across the space.
+#[cfg(not(target_arch = "wasm32"))]
+fn prop_codim() -> usize {
+    std::env::var("HC_PROP_CODIM").ok().and_then(|v| v.parse().ok()).unwrap_or(PROP_CODIM)
+}
+/// Measured on the zy monster: gate 1 times out (every region rediscovered
+/// per hypercuboid), gate 6 over-splits the space; 3 proves it fastest.
+const PROP_CODIM: usize = 3;
+
 /// Hypercuboid legal-action search: YES / NO / TIMEOUT. `deadline` in ms epoch.
 pub(crate) fn has_legal_hc(p: &mut Pos, arena: &mut Arena, deadline: f64, st: &mut HcStats) -> u8 {
     let mut present0: Vec<usize> = Vec::new();
@@ -807,6 +1125,10 @@ pub(crate) fn has_legal_hc(p: &mut Pos, arena: &mut Arena, deadline: f64, st: &m
         return if list.is_empty() { YES } else { NO };
     }
     let u = build_universe(p, arena);
+    #[cfg(not(target_arch = "wasm32"))]
+    let prop_gate = prop_codim();
+    #[cfg(target_arch = "wasm32")]
+    let prop_gate = PROP_CODIM;
     let mut space: Vec<Hypercuboid> = vec![full_hypercuboid(&u)];
     st.axes = u.axes.len();
     st.volume_log2 = space[0].volume_log2();
@@ -820,19 +1142,26 @@ pub(crate) fn has_legal_hc(p: &mut Pos, arena: &mut Arena, deadline: f64, st: &m
         }
         let point = match hc_timed!(st.t_take_ms, take_point(&u, &hc)) {
             Some(pt) => pt,
-            None => continue, //no consistent point lives in this hypercuboid
+            None => {
+                st.no_point += 1;
+                continue; //no consistent point lives in this hypercuboid
+            }
         };
         match hc_timed!(st.t_test_ms, test_point(p, arena, &u, &hc, &point)) {
             Problem::Legal(_action) => return YES,
             Problem::Slice(slice, global) => {
                 st.slices += 1;
+                st.codim_sum += slice.codim() as u64;
+                if global {
+                    st.global_slices += 1;
+                }
                 hc_timed!(st.t_slice_ms, {
                     //A codim-1 slice removes cleanly (at most one piece per
                     //hypercuboid): propagate it through the whole space so the
                     //same invalid region is never rediscovered piecemeal - but
                     //ONLY slices whose soundness is universe-global (today:
                     //the deferral slices that carry the travel-mate proofs).
-                    if global && slice.codim() <= 1 {
+                    if global && slice.codim() <= prop_gate {
                         let mut kept: Vec<Hypercuboid> = Vec::with_capacity(space.len() + 1);
                         for other in space.drain(..) {
                             if slice.intersects(&other) {
@@ -860,7 +1189,7 @@ pub fn profile_has_legal_hc(buf: &[i32], budget_ms: f64) {
     let mut st = HcStats::default();
     let r = has_legal_hc(&mut p, &mut arena, now_ms() + budget_ms, &mut st);
     println!(
-        "hc_has_legal = {} ({}) in {:.3}s | axes {} vol 2^{:.0} | iters {} slices {} propagated {} max_space {} | take {:.0}ms test {:.0}ms slice {:.0}ms | arena boards {}",
+        "hc_has_legal = {} ({}) in {:.3}s | axes {} vol 2^{:.0} | iters {} slices {} (global {} avg codim {:.1}) no_point {} propagated {} max_space {} | take {:.0}ms test {:.0}ms slice {:.0}ms | arena boards {}",
         r as i32,
         ["YES", "NO", "TIMEOUT"][r as usize],
         t0.elapsed().as_secs_f64(),
@@ -868,12 +1197,22 @@ pub fn profile_has_legal_hc(buf: &[i32], budget_ms: f64) {
         st.volume_log2,
         st.iters,
         st.slices,
+        st.global_slices,
+        st.codim_sum as f64 / st.slices.max(1) as f64,
+        st.no_point,
         st.propagated,
         st.max_space,
         st.t_take_ms,
         st.t_test_ms,
         st.t_slice_ms,
         arena.boards.len(),
+    );
+    println!(
+        "  present_slices {} check_slices {} (intrinsic {} new_involved {})",
+        PRESENT_SLICES.load(std::sync::atomic::Ordering::Relaxed),
+        CHECK_SLICES.load(std::sync::atomic::Ordering::Relaxed),
+        INTRINSIC_SLICES.load(std::sync::atomic::Ordering::Relaxed),
+        NEWINV_SLICES.load(std::sync::atomic::Ordering::Relaxed),
     );
 }
 

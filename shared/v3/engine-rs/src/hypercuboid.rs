@@ -551,8 +551,9 @@ pub(crate) fn take_point(u: &Universe, hc: &Hypercuboid) -> Option<Vec<usize>> {
 //=== Test a point =============================================================
 
 pub(crate) enum Problem {
-    /// The point is a legal action (these are its moves, in applied order)
-    Legal(Vec<Mv>),
+    /// The point is a legal action (move ids into Universe::moves, in the
+    /// order they were applied - replaying them in this order is valid)
+    Legal(Vec<u32>),
     /// A slice of invalid points containing this point. The bool marks slices
     /// whose soundness argument is universe-global (safe to propagate into
     /// every hypercuboid); the rest are removed from the current one only.
@@ -592,12 +593,12 @@ pub(crate) fn test_point(
         Branch,
     }
     //Gather the moves to apply with their designation
-    let mut todo: Vec<(usize, Want, Mv)> = Vec::new();
+    let mut todo: Vec<(usize, Want, u32)> = Vec::new();
     for (a, &id) in point.iter().enumerate() {
         match u.axes[a].sms[id] {
-            Sm::Physical(i) => todo.push((a, Want::Phys, u.moves[i as usize])),
-            Sm::Arrival(i) => todo.push((a, Want::Push, u.moves[i as usize])),
-            Sm::Branch(i) => todo.push((a, Want::Branch, u.moves[i as usize])),
+            Sm::Physical(i) => todo.push((a, Want::Phys, i)),
+            Sm::Arrival(i) => todo.push((a, Want::Push, i)),
+            Sm::Branch(i) => todo.push((a, Want::Branch, i)),
             Sm::Null | Sm::Departure(_) => {}
         }
     }
@@ -605,6 +606,7 @@ pub(crate) fn test_point(
     let mut undos: Vec<crate::Undo> = Vec::new();
     let mut owner = BoardOwner { map: Vec::new() };
     let mut done = vec![false; todo.len()];
+    let mut applied: Vec<u32> = Vec::with_capacity(todo.len());
     let mut n_done = 0;
     let slice_sizes: Vec<usize> = u.axes.iter().map(|a| a.sms.len()).collect();
     let cleanup = |p: &mut Pos, arena: &mut Arena, undos: &mut Vec<crate::Undo>| {
@@ -619,7 +621,8 @@ pub(crate) fn test_point(
             if done[ti] {
                 continue;
             }
-            let (axis, want, m) = todo[ti];
+            let (axis, want, mi) = todo[ti];
+            let m = u.moves[mi as usize];
             let src_latest = p.tls[m.s.l as usize].as_ref().map(|tl| (tl.len() - 1) as i32);
             if src_latest != Some(m.s.t) {
                 continue; //source not ready (or consumed: then we stall below)
@@ -654,6 +657,7 @@ pub(crate) fn test_point(
                 }
             }
             undos.push(op);
+            applied.push(mi);
             done[ti] = true;
             n_done += 1;
             progressed = true;
@@ -665,7 +669,8 @@ pub(crate) fn test_point(
                 if done[ti] {
                     continue;
                 }
-                let (axis, want, m) = todo[ti];
+                let (axis, want, mi) = todo[ti];
+                let m = u.moves[mi as usize];
                 if want == Want::Branch {
                     if let Some(b_axis) = u.axes.iter().position(|ax| ax.tl == Some(m.d.l as usize)) {
                         if matches!(u.axes[b_axis].sms[point[b_axis]], Sm::Null) {
@@ -802,9 +807,8 @@ pub(crate) fn test_point(
     let mut list: Vec<(P4, P4)> = Vec::new();
     checks(p, arena, false, &mut list, &present);
     if list.is_empty() {
-        let action: Vec<Mv> = todo.iter().map(|&(_, _, m)| m).collect();
         cleanup(p, arena, &mut undos);
-        return Problem::Legal(action);
+        return Problem::Legal(applied);
     }
     //Any surviving check soundly bans its slice; prefer the one whose boards
     //avoid action-created timeline slots (those freeze every branch axis) and
@@ -1125,30 +1129,96 @@ pub(crate) fn has_legal_hc(p: &mut Pos, arena: &mut Arena, deadline: f64, st: &m
         return if list.is_empty() { YES } else { NO };
     }
     let u = build_universe(p, arena);
+    let space = vec![full_hypercuboid(&u)];
+    search_action(p, arena, &u, space, deadline, st).0
+}
+
+/// Complete one generator move (index into gen_moves order) into a full legal
+/// action: pin the move's semimoves in the hypercuboid and search the rest.
+/// Returns (YES + applied move ids) / NO / TIMEOUT.
+pub(crate) fn has_action_with(
+    p: &mut Pos,
+    arena: &mut Arena,
+    mv_idx: u32,
+    deadline: f64,
+    st: &mut HcStats,
+) -> (u8, Vec<u32>) {
+    let u = build_universe(p, arena);
+    if mv_idx as usize >= u.moves.len() {
+        return (NO, Vec::new());
+    }
+    let m = u.moves[mv_idx as usize];
+    let mut hc = full_hypercuboid(&u);
+    let pin = |hc: &mut Hypercuboid, a: usize, want: &dyn Fn(&Sm) -> bool| -> bool {
+        match u.axes[a].sms.iter().position(want) {
+            Some(id) => {
+                let mut s = AxisSet::empty(u.axes[a].sms.len());
+                s.insert(id);
+                hc.axes[a] = s;
+                true
+            }
+            None => false,
+        }
+    };
+    let src_axis = match u.axis_of_tl.get(m.s.l as usize).copied().flatten() {
+        Some(a) => a,
+        None => return (NO, Vec::new()),
+    };
+    let ok = if m.d.l == m.s.l && m.d.t == m.s.t {
+        pin(&mut hc, src_axis, &|sm| matches!(sm, Sm::Physical(i) if *i == mv_idx))
+    } else {
+        pin(&mut hc, src_axis, &|sm| matches!(sm, Sm::Departure(d) if *d == m.s))
+            && if is_branching(p, &m) {
+                //any new axis hosts the branch; use the first (slot ranks are
+                //canonical in axis order, so this is also the stable choice)
+                match u.axes.iter().position(|ax| ax.tl.is_none()) {
+                    Some(a) => pin(&mut hc, a, &|sm| matches!(sm, Sm::Branch(i) if *i == mv_idx)),
+                    None => false,
+                }
+            } else {
+                match u.axis_of_tl.get(m.d.l as usize).copied().flatten() {
+                    Some(a) => pin(&mut hc, a, &|sm| matches!(sm, Sm::Arrival(i) if *i == mv_idx)),
+                    None => false,
+                }
+            }
+    };
+    if !ok {
+        return (NO, Vec::new());
+    }
+    search_action(p, arena, &u, vec![hc], deadline, st)
+}
+
+fn search_action(
+    p: &mut Pos,
+    arena: &mut Arena,
+    u: &Universe,
+    mut space: Vec<Hypercuboid>,
+    deadline: f64,
+    st: &mut HcStats,
+) -> (u8, Vec<u32>) {
     #[cfg(not(target_arch = "wasm32"))]
     let prop_gate = prop_codim();
     #[cfg(target_arch = "wasm32")]
     let prop_gate = PROP_CODIM;
-    let mut space: Vec<Hypercuboid> = vec![full_hypercuboid(&u)];
     st.axes = u.axes.len();
-    st.volume_log2 = space[0].volume_log2();
+    st.volume_log2 = space.first().map(|h| h.volume_log2()).unwrap_or(0.0);
     while let Some(hc) = space.pop() {
         if hc.is_empty() {
             continue;
         }
         st.iters += 1;
         if st.iters % 64 == 0 && now_ms() > deadline {
-            return TIMEOUT;
+            return (TIMEOUT, Vec::new());
         }
-        let point = match hc_timed!(st.t_take_ms, take_point(&u, &hc)) {
+        let point = match hc_timed!(st.t_take_ms, take_point(u, &hc)) {
             Some(pt) => pt,
             None => {
                 st.no_point += 1;
                 continue; //no consistent point lives in this hypercuboid
             }
         };
-        match hc_timed!(st.t_test_ms, test_point(p, arena, &u, &hc, &point)) {
-            Problem::Legal(_action) => return YES,
+        match hc_timed!(st.t_test_ms, test_point(p, arena, u, &hc, &point)) {
+            Problem::Legal(action) => return (YES, action),
             Problem::Slice(slice, global) => {
                 st.slices += 1;
                 st.codim_sum += slice.codim() as u64;
@@ -1179,7 +1249,7 @@ pub(crate) fn has_legal_hc(p: &mut Pos, arena: &mut Arena, deadline: f64, st: &m
             }
         }
     }
-    NO
+    (NO, Vec::new())
 }
 
 #[cfg(not(target_arch = "wasm32"))]

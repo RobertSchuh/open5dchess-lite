@@ -2067,6 +2067,25 @@ pub extern "C" fn v3_has_legal_hc(len: i32, budget_ms: f64) -> i32 {
     hypercuboid::has_legal_hc(&mut p, &mut arena, now_ms() + budget_ms, &mut st) as i32
 }
 
+//Complete one generator move (index into the v3_list_moves order) into a full
+//legal action via the hypercuboid. Result: [status (0 yes/1 no/2 timeout),
+//n, then n move indices in the order they must be applied].
+#[no_mangle]
+pub extern "C" fn v3_complete_action(len: i32, budget_ms: f64, mv_idx: i32) -> *const i32 {
+    let (mut p, mut arena) = parse(&inbuf()[..len as usize]);
+    let mut st = hypercuboid::HcStats::default();
+    let (r, ids) =
+        hypercuboid::has_action_with(&mut p, &mut arena, mv_idx as u32, now_ms() + budget_ms, &mut st);
+    let out = outbuf();
+    out.clear();
+    out.push(r as i32);
+    out.push(ids.len() as i32);
+    for id in ids {
+        out.push(id as i32);
+    }
+    out.as_ptr()
+}
+
 //Debug/differential-test export: the raw move list in upstream order.
 //Format: [total i32 count, then per move: nPositions, per position: nInts, ints]
 #[no_mangle]

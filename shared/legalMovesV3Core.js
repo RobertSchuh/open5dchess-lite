@@ -99,6 +99,19 @@ export const makeEngine = (instance) => {
     return left > 50 ? hasLegalActionDfs(input, left) : 'timeout';
   };
 
+  //Complete one move (index into the Position.moves() / listMoves order) into
+  //a full legal action. Returns { result: 'yes'|'no'|'timeout', moves: [ids] }
+  //where moves are indices into the same list, in required apply order.
+  const completeAction = (input, moveIdx, budgetMs = 2000) => {
+    const len = upload(input);
+    const rptr = ex.v3_complete_action(len, budgetMs, moveIdx);
+    const mem = new Int32Array(ex.memory.buffer);
+    const base = rptr / 4;
+    const result = RESULTS[mem[base]];
+    const n = mem[base + 1];
+    return { result, moves: Array.from(mem.subarray(base + 2, base + 2 + n)) };
+  };
+
   //Raw move list as generated inside the wasm engine, in upstream order.
   //For differential tests against Position.moves().
   const listMoves = (input) => {
@@ -122,5 +135,5 @@ export const makeEngine = (instance) => {
     return moves;
   };
 
-  return { classifyMoves, hasLegalAction, hasLegalActionDfs, hasLegalActionHc, listMoves };
+  return { classifyMoves, hasLegalAction, hasLegalActionDfs, hasLegalActionHc, completeAction, listMoves };
 };

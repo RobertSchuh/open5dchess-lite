@@ -24,6 +24,45 @@ test('threats flag the time-travel mate Black walked into', async () => {
   assert.deepEqual((await g.textState('white')).threats, []);
 });
 
+test('threats are complete actions with kingsAttacked and avoidable flags', async () => {
+  // Black branched early; both timelines reached the same turn, so White's
+  // threatened actions need a move on BOTH present boards.
+  const ACTIONS = [['e4'], ['e5'], ['Qh5'], ['Nc6'], ['Nf3'], ['(0T3)Nc6>>(0T2)e6~'],
+    ['(-1T3)Na3'], ['(-1T3)a6'], ['(0T4)Na3', '(-1T4)Bb5']];
+  const g = new Game({ id: 'x' });
+  ACTIONS.forEach((mvs, i) => {
+    const seat = i % 2 === 0 ? 'white' : 'black';
+    for(const m of mvs) { g.move(seat, m); }
+    g.submit(seat);
+  });
+  const s = await g.textState('black');
+  // the two-board mating action is reported as a complete action
+  const mate = s.threats.find((t) => t.kind === 'mate' && t.move === '(0T5)Qxe5');
+  assert.ok(mate, s.threatsText);
+  assert.equal(mate.mate, true);
+  assert.ok(Array.isArray(mate.with) && mate.with.length === 1, JSON.stringify(mate));
+  assert.ok(Array.isArray(mate.kingsAttacked) && mate.kingsAttacked.length > 0);
+  assert.match(mate.kingsAttacked[0], /^L-?\d+ T\d+ [a-h][1-8]$/);
+  assert.match(s.threatsText, /full action/);
+  // checks carry an explicit mate verdict
+  const check = s.threats.find((t) => t.kind === 'check');
+  assert.ok(check);
+  assert.equal(check.mate, false);
+});
+
+test('past-board captures that cannot be defended are avoidable:false', async () => {
+  // At LOSS[..14] (White to move) Black's a1-knight threatens jumps onto
+  // frozen past boards; those captures carry the proof flag, checks must not.
+  const g = replay(LOSS.slice(0, 14));
+  const s = await g.textState('white');
+  const frozen = s.threats.find((t) => t.kind === 'capture' && t.avoidable === false);
+  assert.ok(frozen, s.threatsText);
+  assert.match(s.threatsText, /UNAVOIDABLE/);
+  for(const t of s.threats) {
+    if(t.kind !== 'capture') { assert.notEqual(t.avoidable, false, JSON.stringify(t)); }
+  }
+});
+
 test('preview shows what a candidate move allows, without playing it', async () => {
   // Before 4...Nxd5: taking reopens the f-file (Robert's point)
   const g = replay(LOSS.slice(0, 7));

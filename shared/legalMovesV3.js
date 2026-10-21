@@ -23,3 +23,4 @@ export const hasLegalAction = engine.hasLegalAction;
 export const hasLegalActionDfs = engine.hasLegalActionDfs;
 export const hasLegalActionHc = engine.hasLegalActionHc;
 export const listMoves = engine.listMoves;
+export const completeAction = engine.completeAction;

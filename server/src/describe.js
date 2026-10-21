@@ -3,10 +3,11 @@
 // (and so by the MCP server), so any agent gets the same information.
 import { createRequire } from 'node:module';
 import { trimState } from '../../shared/trimState.js';
-import { hasLegalAction } from '../../shared/legalMovesV3.js';
+import { hasLegalAction, completeAction } from '../../shared/legalMovesV3.js';
 import { fixPawnCaptures } from '../../shared/notation.js';
 import { Position } from '../../shared/fastPosition.js';
 import * as enginePiece from '../../shared/engine/piece.js';
+import * as boardFuncs from '../../shared/engine/board.js';
 
 const require = createRequire(import.meta.url);
 const Chess = require('5d-chess-js');
@@ -264,6 +265,56 @@ export const timelineGrid = (chess, you = null) => {
 
 const isTravelRaw = (m) => m[0][0] !== m[1][0] || m[0][1] !== m[1][1];
 
+// Display helpers over raw internal coordinates [l, t, rank, file] (slot
+// index, half-turn, 0-based). Odd-timeline variants only; even variants
+// ("-0"/"+0") skip the analyses that use these.
+const slotToSigned = (l) => (l === 0 ? 0 : l % 2 === 1 ? -(l + 1) / 2 : l / 2);
+const signedToSlot = (n) => (n === 0 ? 0 : n > 0 ? 2 * n : -2 * n - 1);
+const dispPos = (p, turnOffset) =>
+  `L${slotToSigned(p[0])} T${Math.floor(p[1] / 2) + turnOffset} ${'abcdefghijklmnop'[p[3]]}${p[2] + 1}`;
+
+// Raw half-turn index -> displayed turn number offset: displayed turn =
+// floor(rawT / 2) + offset (1 for standard, 0 for turn-zero variants).
+// Read off timeline 0: its first parsed turn vs its first raw board index.
+const turnOffsetOf = (chess, root) => {
+  try {
+    const tl0 = chess.board.timelines.find((tl) => tl.timeline === 0) || chess.board.timelines[0];
+    const raw0 = root.board[signedToSlot(tl0.timeline)];
+    const t0raw = raw0.findIndex((b) => b);
+    return tl0.turns[0].turn - Math.floor(t0raw / 2);
+  }
+  catch { return 1; }
+};
+
+// Our kings attacked in `pos` (the side to move), as display strings
+const kingsAttackedOf = (pos, turnOffset) => {
+  const seen = new Set();
+  for(const [, king] of pos.checksList()) { seen.add(dispPos(king, turnOffset)); }
+  return [...seen];
+};
+
+// Squares a sliding move passes through, strictly between source and dest,
+// in the same raw frame as the move; [] for leapers/one-steppers.
+const rayCrossings = (m) => {
+  const dL = slotToSigned(m[1][0]) - slotToSigned(m[0][0]);
+  const dT = (m[1][1] - m[0][1]) / 2;
+  const dR = m[1][2] - m[0][2];
+  const dF = m[1][3] - m[0][3];
+  const steps = Math.max(Math.abs(dL), Math.abs(dT), Math.abs(dR), Math.abs(dF));
+  if(steps <= 1) { return []; }
+  for(const v of [dL, dT, dR, dF]) {
+    if(v !== 0 && Math.abs(v) !== steps) { return []; } //leaper (knight)
+  }
+  const u = [Math.sign(dL), Math.sign(dT), Math.sign(dR), Math.sign(dF)];
+  const out = [];
+  let cur = [slotToSigned(m[0][0]), m[0][1], m[0][2], m[0][3]];
+  for(let k = 1;k < steps;k++) {
+    cur = [cur[0] + u[0], cur[1] + 2 * u[1], cur[2] + u[2], cur[3] + u[3]];
+    out.push([signedToSlot(cur[0]), cur[1], cur[2], cur[3]]);
+  }
+  return out;
+};
+
 // What the opponent could do next if `chess`'s player made no move at all.
 // Returns [{ move, kind: 'mate'|'check'|'capture', captured, travel }], most
 // dangerous first. If you're already in check, those checks are the threats.
@@ -298,6 +349,22 @@ export const threats = (chess, budgetMs = 6000) => {
   if(chess.moveBuffer.length > 0 && root.submittable()) { nameProbe.submit(); }
   else { nameProbe.pass(); }
   const names = nameProbe.moves('5dpgn', false, false, false).trim().split('\n').map(fixPawnCaptures);
+
+  // Avoidability inputs, valid only in the simple frame: no staged moves (so
+  // `base` is root.pass() and pass-created boards map back to our live tips)
+  // and an odd-timeline variant (signed-slot arithmetic).
+  const isEven = boardFuncs.isEvenTimeline(root.board);
+  const simpleFrame = chess.moveBuffer.length === 0 && !isEven;
+  const turnOffset = turnOffsetOf(chess, root);
+  const rootTips = root.board.map((tl) => (tl ? tl.length - 1 : -1));
+  // base-frame square -> root-frame square we could reach, or null if frozen
+  const toRootSquare = ([l, t, r, f]) => {
+    if(rootTips[l] === undefined || rootTips[l] < 0) { return null; }
+    return t > rootTips[l] ? [l, rootTips[l], r, f] : [l, t, r, f];
+  };
+  const key = (p) => p.join(',');
+  const ourDests = simpleFrame ? new Set(root.moves().map((mv) => key(mv[1]))) : null;
+
   const res = [];
   for(let i = 0;i < rawMoves.length;i++) {
     const m = rawMoves[i];
@@ -307,23 +374,66 @@ export const threats = (chess, budgetMs = 6000) => {
     const targetChar = targetInt !== 0 && targetInt % 2 === myParity ? enginePiece.toChar(targetInt, true) : null;
     const captured = targetChar ? NAME[targetChar] || 'piece' : null;
     let kind = captured ? 'capture' : null;
+    let mate; // true | false | 'unknown' (only set on checking actions)
     let maybeMate = false; // mate search ran out of time
-    // Does this move alone give check, or even mate? Only when it completes
-    // the opponent's turn by itself (one present board), and while time lasts.
+    let withMoves; // the other moves of the completed action (5DPGN names)
+    let kingsAttacked;
+    // Complete the move into a full action (all present boards answered):
+    // single-move fast path, else the hypercuboid completes it. A move that
+    // fits NO legal action is not a threat at all.
     if(Date.now() < deadline) {
+      let after = null;
       const next = base.clone().apply(m);
-      if(next.submittable()) {
-        const after = next.submit();
-        if(after.inCheck()) {
-          kind = 'check';
-          const mate = Date.now() < deadline ? hasLegalAction(after, Math.min(2000, deadline - Date.now())) : 'timeout';
-          if(mate === 'no') { kind = 'mate'; }
-          else if(mate === 'timeout') { maybeMate = true; }
+      if(next.submittable()) { after = next.submit(); }
+      else {
+        const comp = completeAction(base, i, Math.min(800, deadline - Date.now()));
+        if(comp.result === 'no') { continue; }
+        if(comp.result === 'yes') {
+          let cur = base.clone();
+          for(const id of comp.moves) { cur = cur.apply(rawMoves[id]); }
+          if(cur.submittable()) {
+            after = cur.submit();
+            withMoves = comp.moves.filter((id) => id !== i).map((id) => names[id]);
+            if(withMoves.length === 0) { withMoves = undefined; }
+          }
         }
+      }
+      if(after && after.inCheck()) {
+        kind = 'check';
+        //display strings use signed-slot arithmetic: odd variants only
+        if(!isEven) { kingsAttacked = kingsAttackedOf(after, turnOffset); }
+        const verdict = Date.now() < deadline ? hasLegalAction(after, Math.min(2000, deadline - Date.now())) : 'timeout';
+        if(verdict === 'no') { kind = 'mate'; mate = true; }
+        else if(verdict === 'timeout') { maybeMate = true; mate = 'unknown'; }
+        else { mate = false; }
       }
     }
     if(kind) {
-      res.push({ move: names[i], kind, captured, travel: isTravelRaw(m), maybeMate, value: captured ? VALUE[targetChar] || 1 : 0 });
+      // avoidable:false is a PROOF: the captured piece is frozen on a past
+      // board, no move of ours captures the attacker (its square on our live
+      // boards), and no move of ours can block the ray. avoidable:true: the
+      // target is on a live board we could still move.
+      //only for plain captures: on a check/mate the flag would read as
+      //"the mate is unavoidable", which this analysis does not prove
+      let avoidable;
+      if(captured && kind === 'capture' && simpleFrame) {
+        const targetFrozen = dest[1] <= rootTips[dest[0]];
+        if(!targetFrozen) { avoidable = true; }
+        else {
+          const att = toRootSquare(m[0]);
+          const canCapture = att !== null && ourDests.has(key(att));
+          const canBlock = rayCrossings(m).some((c) => {
+            const rc = toRootSquare(c);
+            return rc !== null && ourDests.has(key(rc));
+          });
+          if(!canCapture && !canBlock) { avoidable = false; }
+        }
+      }
+      res.push({
+        move: names[i], with: withMoves, kind, mate, captured, avoidable,
+        kingsAttacked, travel: isTravelRaw(m), maybeMate,
+        value: captured ? VALUE[targetChar] || 1 : 0,
+      });
     }
   }
   const rank = { mate: 3, check: 2, capture: 1 };
@@ -340,10 +450,15 @@ export const threatsText = (list, inCheck) => {
     const what = t.kind === 'mate' ? 'CHECKMATE' :
       t.kind === 'check' ? `check${t.maybeMate ? ' (could be mate, not checked fully)' : ''}${t.captured ? `, takes your ${t.captured}` : ''}` :
       `takes your ${t.captured}`;
-    return `- ${t.move}: ${what}${t.travel ? ' (time travel / other timeline)' : ''}`;
+    const parts = [`- ${t.move}: ${what}`];
+    if(t.with && t.with.length) { parts.push(` (as the full action ${[t.move, ...t.with].join(' / ')})`); }
+    if(t.kingsAttacked && t.kingsAttacked.length) { parts.push(` [kings attacked: ${t.kingsAttacked.join(', ')}]`); }
+    if(t.avoidable === false) { parts.push(' [UNAVOIDABLE: the piece is frozen on a past board and you can neither capture the attacker nor block the path - do not waste moves defending it]'); }
+    if(t.travel) { parts.push(' (time travel / other timeline)'); }
+    return parts.join('');
   };
   const mates = list.filter((t) => t.kind === 'mate');
-  const lines = ['If you made no move, the opponent could play:'];
+  const lines = ['If you made no move, the opponent could play (each line is one move; where it alone would not answer every present board, "full action" shows one way the opponent completes the turn):'];
   if(mates.length) { lines.push(`!! ${mates.length} MATE THREAT${mates.length > 1 ? 'S' : ''}: your move must stop ${mates.length > 1 ? 'these' : 'this'}.`); }
   // Mates and checks are never truncated (a hidden one once cost a game);
   // only plain captures past the cap are summarized.

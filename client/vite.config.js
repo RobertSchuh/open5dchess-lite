@@ -29,6 +29,8 @@ export default defineConfig({
       { find: /^util\/?$/, replacement: 'util/' },
       { find: /^path$/, replacement: 'path-browserify' },
       { find: /^events$/, replacement: 'events/' },
+      // nedb-promises v6 imports the node:-prefixed form
+      { find: /^node:events$/, replacement: 'events/' },
       // Code shared with the server (repo-root shared/).
       { find: /^shared\/(.*)$/, replacement: path.resolve(import.meta.dirname, '../shared/$1') },
       { find: /^(polyfills|App|App\.css|state|network|route|components|utils|locales|assets|vendor)(\/.*)?$/, replacement: `${src}/$1$2` },

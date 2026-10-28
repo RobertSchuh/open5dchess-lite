@@ -182,21 +182,63 @@ class ZoomManager {
     }
     this.update();
   }
-  present(move = true, zoom = true) {
+  //Timelines whose latest board sits at the present (active timelines only,
+  //ghost previews excluded). Staged moves advance their timeline's latest
+  //board, so the result always reflects the live, partly-played action.
+  presentBoards() {
     var presentTurn = utilsFuncs.presentTurn(this.global.boardObject);
-    var currTimeline = 0;
-    var presentTimelines = this.global.boardObject.timelines.filter(t => t.present);
-    if(presentTimelines.length > 0) {
-      currTimeline = presentTimelines[0].timeline;
+    var res = [];
+    for(var timeline of this.global.boardObject.timelines) {
+      if(!timeline.active) { continue; }
+      var latest = null;
+      for(var turn of timeline.turns) {
+        if(turn.ghost) { continue; }
+        if(
+          latest === null ||
+          turn.turn > latest.turn ||
+          (turn.turn === latest.turn && turn.player === 'black')
+        ) {
+          latest = turn;
+        }
+      }
+      if(latest !== null && latest.turn === presentTurn.turn && latest.player === presentTurn.player) {
+        res.push(timeline.timeline);
+      }
     }
-    var presentCoords = positionFuncs.toCoordinates({
-      timeline: currTimeline,
-      turn: presentTurn.turn,
-      player: presentTurn.player,
+    return { turn: presentTurn.turn, player: presentTurn.player, timelines: res };
+  }
+  //Focus the present. A board still needs a move only while it sits at the
+  //present AND awaits the side to move; once every required board is staged
+  //the present passes to the opponent's half-turn, and with pendingOnly the
+  //view stays put instead of jumping onto the boards just moved. Among
+  //several candidates, the one nearest the current view wins.
+  present(move = true, zoom = true, pendingOnly = false) {
+    var present = this.presentBoards();
+    var sideToMove = this.global.boardObject.player;
+    if(pendingOnly && present.player !== sideToMove) { return; }
+    var candidates = present.timelines.length > 0 ? present.timelines : [0];
+    var coordsOf = (timeline) => positionFuncs.toCoordinates({
+      timeline: timeline,
+      turn: present.turn,
+      player: present.player,
       coordinate: 'a1',
       rank: 1,
       file: 1
     }, this.global);
+    var presentCoords = coordsOf(candidates[0]);
+    var view = this.viewport.center;
+    if(candidates.length > 1 && view) {
+      var bestDistance = Number.POSITIVE_INFINITY;
+      for(var timeline of candidates) {
+        var coords = coordsOf(timeline);
+        var dx = coords.boardWithMargins.center.x - view.x;
+        var dy = coords.boardWithMargins.center.y - view.y;
+        if(dx * dx + dy * dy < bestDistance) {
+          bestDistance = dx * dx + dy * dy;
+          presentCoords = coords;
+        }
+      }
+    }
     if(move) {
       this.viewport.snap(presentCoords.boardWithMargins.center.x, presentCoords.boardWithMargins.center.y, {
         friction: this.global.configStore.get('viewport').snapOptions.friction,

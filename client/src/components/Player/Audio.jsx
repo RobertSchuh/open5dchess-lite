@@ -53,7 +53,7 @@ export default class Audio extends React.Component {
     let currentConfig = crConfig.get();
     if(currentConfig.extra.autoRecenter && this.props.chessRendererRef) {
       window.setTimeout(() => {
-        this.props.chessRendererRef.current.chessRenderer.zoom.present(true, false);
+        this.props.chessRendererRef.current.chessRenderer.zoom.present(true, false, true);
       }, 250);
     }
   }

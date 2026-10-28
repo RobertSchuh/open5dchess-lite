@@ -179,6 +179,94 @@ const hintsCase = async (browser) => {
   await page.close();
 };
 
+//=== auto-recenter: after each move the view goes to a board still awaiting ==
+//=== the side to move, or stays put once every required board is staged =====
+const FOCUS_SCENARIOS = [
+  {
+    name: 'two present boards',
+    setup: [['e4'], ['e5'], ['Qh5'], ['Nc6'], ['Nf3'], ['(0T3)Nc6>>(0T2)e6~'], ['(-1T3)Na3'], ['(-1T3)a6'], ['(0T4)Na3', '(-1T4)Bb5']],
+    steps: [
+      { lookAt: [0, 4, 'black'], act: 'move', arg: '(0T4)a6', want: 'L-1 T4b' },
+      { lookAt: [-1, 4, 'black'], act: 'move', arg: '(-1T4)a5', want: 'stay' },
+      { lookAt: [-1, 5, 'white'], act: 'undo', want: 'L-1 T4b' },
+      { lookAt: [-1, 4, 'black'], act: 'move', arg: '(-1T4)a5', want: 'stay' },
+      { lookAt: [-1, 5, 'white'], act: 'submit', want: 'L-1 T5w' },
+    ],
+  },
+  {
+    name: 'present on L-1 only, L0 optional',
+    setup: [['e4'], ['e5'], ['Qh5'], ['Nc6'], ['Nf3'], ['(0T3)Nc6>>(0T2)e6~']],
+    steps: [
+      { lookAt: [0, 4, 'white'], act: 'move', arg: '(0T4)Nc3', want: 'L-1 T3w' },
+      { lookAt: [-1, 3, 'white'], act: 'move', arg: '(-1T3)Nf3', want: 'stay' },
+    ],
+  },
+];
+
+const focusCase = async (browser, sc) => {
+  const page = await browser.newPage({ viewport: { width: 1000, height: 800 } });
+  const errs = [];
+  page.on('pageerror', (e) => errs.push(e.message));
+  await page.goto(BASE + '/');
+  await page.evaluate(() => {
+    localStorage.setItem('settings', JSON.stringify({ locale: 'en', eruda: false, quickPlay: { variants: ['standard'], formats: ['none'] } }));
+  });
+  await page.reload();
+  await page.waitForTimeout(1200);
+  await page.click('button:has-text("Local Play")');
+  await page.waitForFunction(() => window.open5dSession && window.open5dSession.chess && window.cr, { timeout: 20000 });
+  await page.waitForTimeout(1000);
+  await page.evaluate(async (actions) => {
+    const sm = window.open5dSession;
+    for(const a of actions) {
+      for(const m of a) { await sm.move(m); }
+      await sm.submit();
+    }
+  }, sc.setup);
+  await page.waitForTimeout(1000);
+  //record camera snaps instead of animating; name a snap target by probing
+  //zoom.board() for every board on screen
+  await page.evaluate(() => {
+    const vp = window.cr.zoom.viewport;
+    window.__snaps = [];
+    vp.snap = (x, y) => { window.__snaps.push([x, y]); };
+    vp.snapZoom = () => {};
+    window.__boardAt = (l, t, p) => {
+      const n = window.__snaps.length;
+      window.cr.zoom.board(l, t, p, true, false);
+      const xy = window.__snaps[n];
+      window.__snaps.length = n;
+      return xy;
+    };
+    window.__label = (xy) => {
+      if(!xy) { return 'stay'; }
+      for(const tl of window.cr.global.boardObject.timelines) {
+        for(const turn of tl.turns) {
+          const b = window.__boardAt(tl.timeline, turn.turn, turn.player);
+          if(b && Math.abs(b[0] - xy[0]) < 1 && Math.abs(b[1] - xy[1]) < 1) { return `L${tl.timeline} T${turn.turn}${turn.player[0]}`; }
+        }
+      }
+      return 'unknown';
+    };
+  });
+  for(const step of sc.steps) {
+    const got = await page.evaluate(async ({ lookAt, act, arg }) => {
+      const sm = window.open5dSession;
+      const xy = window.__boardAt(lookAt[0], lookAt[1], lookAt[2]);
+      window.cr.zoom.viewport.moveCenter(xy[0], xy[1]);
+      window.__snaps.length = 0;
+      if(act === 'move') { await sm.move(arg); }
+      if(act === 'undo') { await sm.undo(); }
+      if(act === 'submit') { await sm.submit(); }
+      await new Promise((r) => setTimeout(r, 1000));
+      return window.__label(window.__snaps[window.__snaps.length - 1]);
+    }, step);
+    check(`focus ${sc.name}: ${step.act} ${step.arg || ''} -> ${step.want}`, got === step.want, `focused ${got}`);
+  }
+  check(`focus ${sc.name}: no page errors`, errs.length === 0, errs.join(' | ').slice(0, 150));
+  await page.close();
+};
+
 //=== run ======================================================================
 console.log(`e2e-games: serving ${path.relative(root, STATIC)} on :${PORT}`);
 const server = spawn('node', ['src/index.js'], {
@@ -200,6 +288,7 @@ try {
   for(const c of CASES) { await guard(`online ${c.name}`, () => onlineCase(browser, c)); }
   for(const c of CASES) { await guard(`local ${c.name}`, () => localCase(browser, c)); }
   await guard('hints', () => hintsCase(browser));
+  for(const sc of FOCUS_SCENARIOS) { await guard(`focus ${sc.name}`, () => focusCase(browser, sc)); }
   await browser.close();
 }
 finally {
